@@ -8,8 +8,8 @@ interface Props {
   videoId: string;
   heading: string;
   onClose: () => void;
-  /** Called when the user picks a stream to play. */
-  onPick: (stream: RankedStream) => void;
+  /** Called when the user picks a stream to play, with the ranked list for fallbacks. */
+  onPick: (stream: RankedStream, ranked: RankedStream[]) => void;
 }
 
 function streamKind(stream: Stream) {
@@ -123,7 +123,7 @@ export default function StreamsPanel({ type, videoId, heading, onClose, onPick }
                 key={streams.indexOf(s)}
                 stream={s}
                 best={s === streams[0]}
-                onPick={onPick}
+                onPick={(picked) => onPick(picked, streams)}
               />
             ))}
           </ol>
@@ -138,7 +138,12 @@ export default function StreamsPanel({ type, videoId, heading, onClose, onPick }
               <summary>{results.data.hidden.length} hidden by your filters</summary>
               <ol className="stream-list">
                 {results.data.hidden.map((s, i) => (
-                  <StreamItem key={i} stream={s} note={s.hiddenBecause} onPick={onPick} />
+                  <StreamItem
+                    key={i}
+                    stream={s}
+                    note={s.hiddenBecause}
+                    onPick={(picked) => onPick(picked, streams)}
+                  />
                 ))}
               </ol>
             </details>

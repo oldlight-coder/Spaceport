@@ -62,6 +62,7 @@ type SetOptionStringFn =
 type CommandFn = unsafe extern "C" fn(*mut RawHandle, *mut *const c_char) -> c_int;
 type SetPropertyStringFn =
     unsafe extern "C" fn(*mut RawHandle, *const c_char, *const c_char) -> c_int;
+type ObservePropertyFn = unsafe extern "C" fn(*mut RawHandle, u64, *const c_char, c_int) -> c_int;
 type WaitEventFn = unsafe extern "C" fn(*mut RawHandle, c_double) -> *mut RawEvent;
 type ErrorStringFn = unsafe extern "C" fn(c_int) -> *const c_char;
 
@@ -73,6 +74,7 @@ pub struct MpvLib {
     set_option_string: SetOptionStringFn,
     command: CommandFn,
     set_property_string: SetPropertyStringFn,
+    observe_property: ObservePropertyFn,
     wait_event: WaitEventFn,
     error_string: ErrorStringFn,
     // Kept last so the function pointers above never outlive the library.
@@ -109,6 +111,7 @@ impl MpvLib {
             set_option_string: sym!("mpv_set_option_string"),
             command: sym!("mpv_command"),
             set_property_string: sym!("mpv_set_property_string"),
+            observe_property: sym!("mpv_observe_property"),
             wait_event: sym!("mpv_wait_event"),
             error_string: sym!("mpv_error_string"),
             _lib: lib,
@@ -250,6 +253,15 @@ impl Mpv {
         let (n, v) = (cstring(name)?, cstring(value)?);
         // SAFETY: valid handle and strings.
         self.check(unsafe { (self.lib.set_property_string)(self.handle, n.as_ptr(), v.as_ptr()) })
+    }
+
+    /// Asks for `Event::Property` whenever `name` changes, delivered as a double.
+    pub fn observe_double(&self, id: u64, name: &str) -> Result<(), String> {
+        let n = cstring(name)?;
+        // SAFETY: valid handle and string.
+        self.check(unsafe {
+            (self.lib.observe_property)(self.handle, id, n.as_ptr(), FORMAT_DOUBLE)
+        })
     }
 
     /// Blocks up to `timeout` seconds (negative waits forever) for the next event.

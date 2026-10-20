@@ -298,19 +298,23 @@ async fn streams_fetch(
     ))
 }
 
-/// Plays a direct (HTTP) link in the embedded player. Runs on the main thread because it
-/// creates the video window.
+/// Plays the first of the ranked candidates in the embedded player and falls back to the next
+/// on failure. Runs on the main thread because it creates the video window.
 #[tauri::command]
 fn player_open(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-    url: String,
+    candidates: Vec<player::Candidate>,
     title: String,
 ) -> Result<(), String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err("only web links can be played for now".to_string());
+    let candidates: Vec<player::Candidate> = candidates
+        .into_iter()
+        .filter(|c| c.url.starts_with("https://") || c.url.starts_with("http://"))
+        .collect();
+    if candidates.is_empty() {
+        return Err("none of these streams can be played yet".to_string());
     }
-    state.player.open(&app, &url, &title)
+    state.player.open(&app, candidates, &title)
 }
 
 #[tauri::command]

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Episode, getMeta, MetaDetails } from "../api/meta";
-import { onPlayerEvent, openPlayer } from "../api/player";
-import { RankedStream } from "../api/streams";
+import { candidatesFrom, onPlayerEvent, openPlayer } from "../api/player";
+import { fetchStreams, RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
 import { TitleRef } from "../navigation";
@@ -49,34 +49,68 @@ function Details({ meta }: { meta: MetaDetails }) {
       if (event.kind === "failed") {
         setNotice({ text: `Playback failed: ${event.message}`, error: true });
       }
+      // A started or closed player makes "Starting…" stale; errors stay until dismissed.
+      if (event.kind === "loaded" || event.kind === "closed") {
+        setNotice((current) => (current?.error ? current : null));
+      }
     });
     return () => {
       unlisten.then((stop) => stop());
     };
   }, []);
 
-  async function play(heading: string, stream: RankedStream) {
-    setNotice(null);
-    if (!stream.url) {
-      // Torrents need the built-in engine, which arrives in M5.
-      setNotice({ text: "Torrent streams can't be played yet; pick a direct or debrid link." });
+  const fullTitle = (heading: string) =>
+    heading === meta.name ? meta.name : `${meta.name} · ${heading}`;
+
+  /** Plays `first` (or the best stream) and lets the player fall back down the ranked list. */
+  async function play(target: StreamTarget, ranked: RankedStream[], first?: RankedStream) {
+    const candidates = candidatesFrom(ranked, first);
+    if (candidates.length === 0) {
+      const torrents = ranked.some((s) => s.infoHash);
+      setNotice({
+        text: torrents
+          ? "Only torrent streams were found, and torrent playback is not built yet."
+          : "No playable stream was found.",
+        error: true,
+      });
       return;
     }
+    setNotice({ text: `Starting ${candidates[0].label}…` });
     try {
-      const title = heading === meta.name ? meta.name : `${meta.name} · ${heading}`;
-      await openPlayer(stream.url, title);
+      await openPlayer(candidates, fullTitle(target.heading));
     } catch (e) {
       setNotice({ text: String(e), error: true });
     }
   }
-  const openEpisode = (ep: Episode) =>
-    setTarget({
-      videoId: ep.id,
-      heading:
-        ep.season != null && ep.episode != null
-          ? `S${ep.season} E${ep.episode} · ${ep.title}`
-          : ep.title,
-    });
+
+  /** Auto-play: rank the streams and start the best one without showing the picker. */
+  async function autoPlay(target: StreamTarget) {
+    setNotice({ text: `Finding the best stream for ${target.heading}…` });
+    try {
+      const results = await fetchStreams(meta.type, target.videoId);
+      if (results.streams.length === 0) {
+        setNotice({ text: "No stream passed your filters; choose one yourself.", error: true });
+        setTarget(target);
+        return;
+      }
+      await play(target, results.streams);
+    } catch (e) {
+      setNotice({ text: String(e), error: true });
+    }
+  }
+
+  const episodeTarget = (ep: Episode): StreamTarget => ({
+    videoId: ep.id,
+    heading:
+      ep.season != null && ep.episode != null
+        ? `S${ep.season} E${ep.episode} · ${ep.title}`
+        : ep.title,
+  });
+  const episodeActions: EpisodeActions = {
+    play: (ep) => autoPlay(episodeTarget(ep)),
+    choose: (ep) => setTarget(episodeTarget(ep)),
+  };
+  const movieTarget = { videoId: meta.id, heading: meta.name };
   const facts = [meta.releaseInfo, meta.runtime, meta.imdbRating && `IMDb ${meta.imdbRating}`].filter(
     Boolean,
   );
@@ -106,9 +140,10 @@ function Details({ meta }: { meta: MetaDetails }) {
             )}
             {meta.description && <p className="description">{meta.description}</p>}
             {meta.seasons.length === 0 && meta.videos.length === 0 && (
-              <div>
-                <button onClick={() => setTarget({ videoId: meta.id, heading: meta.name })}>
-                  Streams
+              <div className="row-actions">
+                <button onClick={() => autoPlay(movieTarget)}>▶ Play</button>
+                <button className="secondary" onClick={() => setTarget(movieTarget)}>
+                  Choose stream
                 </button>
               </div>
             )}
@@ -135,11 +170,11 @@ function Details({ meta }: { meta: MetaDetails }) {
           </button>
         </div>
       )}
-      {meta.seasons.length > 0 && <Seasons meta={meta} onOpen={openEpisode} />}
+      {meta.seasons.length > 0 && <Seasons meta={meta} actions={episodeActions} />}
       {meta.videos.length > 0 && (
         <section>
           <h2>Videos</h2>
-          <EpisodeList episodes={meta.videos} onOpen={openEpisode} />
+          <EpisodeList episodes={meta.videos} actions={episodeActions} />
         </section>
       )}
       {target && (
@@ -149,9 +184,9 @@ function Details({ meta }: { meta: MetaDetails }) {
           videoId={target.videoId}
           heading={target.heading}
           onClose={() => setTarget(null)}
-          onPick={(stream) => {
+          onPick={(stream, ranked) => {
             setTarget(null);
-            play(target.heading, stream);
+            play(target, ranked, stream);
           }}
         />
       )}
@@ -181,7 +216,13 @@ function saveSeason(id: string, season: number) {
   }
 }
 
-function Seasons({ meta, onOpen }: { meta: MetaDetails; onOpen: (ep: Episode) => void }) {
+/** What clicking an episode does: play it, or open the picker for it. */
+interface EpisodeActions {
+  play: (ep: Episode) => void;
+  choose: (ep: Episode) => void;
+}
+
+function Seasons({ meta, actions }: { meta: MetaDetails; actions: EpisodeActions }) {
   const [selected, setSelected] = useState(() => readSeason(meta.id) ?? meta.seasons[0].number);
   const season = meta.seasons.find((s) => s.number === selected) ?? meta.seasons[0];
 
@@ -205,7 +246,7 @@ function Seasons({ meta, onOpen }: { meta: MetaDetails; onOpen: (ep: Episode) =>
           ))}
         </select>
       </div>
-      <EpisodeList episodes={season.episodes} onOpen={onOpen} />
+      <EpisodeList episodes={season.episodes} actions={actions} />
     </section>
   );
 }
@@ -218,15 +259,15 @@ function formatDate(value: string | null) {
 
 interface EpisodeListProps {
   episodes: Episode[];
-  onOpen: (ep: Episode) => void;
+  actions: EpisodeActions;
 }
 
-function EpisodeList({ episodes, onOpen }: EpisodeListProps) {
+function EpisodeList({ episodes, actions }: EpisodeListProps) {
   return (
     <ol className="episodes">
       {episodes.map((ep) => (
-        <li key={ep.id}>
-          <button className="episode" onClick={() => onOpen(ep)}>
+        <li key={ep.id} className="episode-row">
+          <button className="episode" onClick={() => actions.play(ep)} title="Play">
             {ep.thumbnail ? (
               <img src={ep.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" />
             ) : (
@@ -240,6 +281,14 @@ function EpisodeList({ episodes, onOpen }: EpisodeListProps) {
               {ep.released && <span className="muted"> · {formatDate(ep.released)}</span>}
               {ep.overview && <p className="muted">{ep.overview}</p>}
             </div>
+          </button>
+          <button
+            className="secondary choose-stream"
+            onClick={() => actions.choose(ep)}
+            aria-label={`Choose a stream for ${ep.title}`}
+            title="Choose stream"
+          >
+            ⋯
           </button>
         </li>
       ))}

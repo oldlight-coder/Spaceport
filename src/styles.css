@@ -859,3 +859,19 @@ button.chip.active {
   border-color: var(--danger);
   background: #2a1717;
 }
+
+.episode-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.episode-row .episode {
+  flex: 1;
+}
+
+.choose-stream {
+  flex: none;
+  padding: 0 14px;
+  font-size: 20px;
+}

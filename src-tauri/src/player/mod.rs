@@ -1,16 +1,23 @@
 //! Video playback with libmpv, drawn into a child window of the main window.
 
 mod mpv;
+mod queue;
 mod surface;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use mpv::{Event, Mpv, MpvLib};
+use mpv::{Event, Mpv, MpvLib, PropertyValue};
+pub use queue::Candidate;
+use queue::{Action, PlayQueue};
 use surface::Surface;
+
+const OBSERVE_POSITION: u64 = 1;
+const OBSERVE_DURATION: u64 = 2;
 
 /// The DLL `pnpm run setup` places in `src-tauri/lib` and the installer puts next to the app.
 const LIBRARY_FILE: &str = "libmpv-2.dll";
@@ -37,15 +44,30 @@ const BASE_OPTIONS: &[(&str, &str)] = &[
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum PlayerEvent {
-    Loaded,
+    /// A stream started; `label` names which one.
+    Loaded {
+        label: String,
+    },
+    /// The previous stream failed and the next ranked one is being tried.
+    Fallback {
+        label: String,
+        reason: String,
+    },
     Ended,
-    Failed { message: String },
+    /// Every candidate failed.
+    Failed {
+        message: String,
+    },
     Closed,
 }
+
+/// The candidates of the current title, shared with the event thread.
+type SharedQueue = Arc<Mutex<Option<PlayQueue>>>;
 
 struct Session {
     mpv: Arc<Mpv>,
     surface: Surface,
+    queue: SharedQueue,
 }
 
 #[derive(Default)]
@@ -100,12 +122,21 @@ impl Player {
         Ok(loaded)
     }
 
-    /// Starts playing `url`, reusing the open player if there is one. Main thread only.
-    pub fn open(&self, app: &AppHandle, url: &str, title: &str) -> Result<(), String> {
+    /// Plays the first of `candidates` (ranked best first) and falls back down the list when a
+    /// stream fails. Reuses the open player if there is one. Main thread only.
+    pub fn open(
+        &self,
+        app: &AppHandle,
+        candidates: Vec<Candidate>,
+        title: &str,
+    ) -> Result<(), String> {
+        let (queue, first) =
+            PlayQueue::new(candidates, Instant::now()).ok_or("there is no stream to play")?;
         let mut session = self.session.lock().unwrap();
         if let Some(existing) = session.as_ref() {
             existing.mpv.set_property("force-media-title", title)?;
-            return existing.mpv.command(&["loadfile", url, "replace"]);
+            *existing.queue.lock().unwrap() = Some(queue);
+            return apply(&existing.mpv, first);
         }
 
         let lib = self.lib(app)?;
@@ -127,11 +158,18 @@ impl Player {
         // Esc leaves the player, like closing a video anywhere else. Older mpv builds without
         // the keybind command still quit with q.
         let _ = mpv.command(&["keybind", "ESC", "quit"]);
+        mpv.observe_double(OBSERVE_POSITION, "time-pos")?;
+        mpv.observe_double(OBSERVE_DURATION, "duration")?;
         mpv.set_property("force-media-title", title)?;
-        mpv.command(&["loadfile", url, "replace"])?;
 
-        spawn_event_thread(app.clone(), mpv.clone());
-        *session = Some(Session { mpv, surface });
+        let queue: SharedQueue = Arc::new(Mutex::new(Some(queue)));
+        spawn_event_thread(app.clone(), mpv.clone(), queue.clone());
+        apply(&mpv, first)?;
+        *session = Some(Session {
+            mpv,
+            surface,
+            queue,
+        });
         Ok(())
     }
 
@@ -167,19 +205,101 @@ fn window_handle(_window: &tauri::WebviewWindow) -> Result<isize, String> {
     Err("the player is only available on Windows".to_string())
 }
 
-/// Forwards mpv events to the UI until mpv shuts down, then removes the video window.
-fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>) {
+/// Carries out a queue decision: loads a stream (optionally from a position).
+fn apply(mpv: &Mpv, action: Action) -> Result<(), String> {
+    match action {
+        Action::Load { url, start, .. } => match start {
+            Some(seconds) => {
+                let start = format!("start={seconds:.1}");
+                mpv.command(&["loadfile", &url, "replace", "-1", &start])
+            }
+            None => mpv.command(&["loadfile", &url, "replace"]),
+        },
+        Action::GiveUp { .. } | Action::Wait => Ok(()),
+    }
+}
+
+/// Acts on a queue decision and tells the UI about it.
+fn follow(app: &AppHandle, mpv: &Mpv, action: Action, reason: &str) {
+    match &action {
+        Action::Load { label, .. } => {
+            let _ = mpv.command(&["show-text", &format!("{reason} - trying {label}"), "4000"]);
+            let _ = app.emit(
+                "player",
+                PlayerEvent::Fallback {
+                    label: label.clone(),
+                    reason: reason.to_string(),
+                },
+            );
+            if let Err(e) = apply(mpv, action) {
+                let _ = app.emit("player", PlayerEvent::Failed { message: e });
+                let _ = mpv.command(&["quit"]);
+            }
+        }
+        Action::GiveUp { tried, last_error } => {
+            let message = if *tried == 1 {
+                format!("The stream would not play ({last_error}).")
+            } else {
+                format!("None of the {tried} streams would play (last: {last_error}).")
+            };
+            let _ = app.emit("player", PlayerEvent::Failed { message });
+            let _ = mpv.command(&["quit"]);
+        }
+        Action::Wait => {}
+    }
+}
+
+/// Forwards mpv events to the UI, switches streams on failure, and removes the video window
+/// once mpv shuts down.
+fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue) {
     std::thread::spawn(move || {
         loop {
-            let event = match mpv.wait_event(-1.0) {
-                Event::FileLoaded => Some(PlayerEvent::Loaded),
-                Event::EndOfFile => Some(PlayerEvent::Ended),
-                Event::Failed(message) => Some(PlayerEvent::Failed { message }),
-                Event::Shutdown => break,
-                _ => None,
+            // Wake at least once a second so a stream that never starts can be timed out.
+            let event = mpv.wait_event(1.0);
+            let mut guard = queue.lock().unwrap();
+            let Some(q) = guard.as_mut() else {
+                if event == Event::Shutdown {
+                    break;
+                }
+                continue;
             };
-            if let Some(event) = event {
-                let _ = app.emit("player", event);
+            let now = Instant::now();
+            match event {
+                Event::Shutdown => break,
+                Event::FileLoaded => {
+                    q.on_loaded();
+                    let label = q.current_label().to_string();
+                    let _ = app.emit("player", PlayerEvent::Loaded { label });
+                }
+                Event::Property {
+                    name,
+                    value: PropertyValue::Double(v),
+                } => match name.as_str() {
+                    "time-pos" => q.on_position(v),
+                    "duration" => q.on_duration(v),
+                    _ => {}
+                },
+                Event::Failed(error) => {
+                    let action = q.on_failed(&error, now);
+                    drop(guard);
+                    follow(&app, &mpv, action, &format!("Stream failed ({error})"));
+                }
+                Event::EndOfFile => {
+                    if q.finished_normally() {
+                        drop(guard);
+                        let _ = app.emit("player", PlayerEvent::Ended);
+                    } else {
+                        let action = q.on_end_of_file(now);
+                        drop(guard);
+                        follow(&app, &mpv, action, "Stream stopped early");
+                    }
+                }
+                Event::None => {
+                    let action = q.on_tick(now);
+                    drop(guard);
+                    follow(&app, &mpv, action, "Stream did not start");
+                }
+                _ => {}
             }
         }
         drop(mpv);

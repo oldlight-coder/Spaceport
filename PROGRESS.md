@@ -29,7 +29,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
   filters; parser tests cover at least 30 real-world stream titles.
 
 ## M4. Player
-- [ ] libmpv embedded in the window, hardware decoding on
+- [x] libmpv embedded in the window, hardware decoding on
 - [ ] Plays direct and debrid links; auto-plays top stream, falls back to next on failure
 - [ ] Controls: play/pause, seek, volume, fullscreen, audio track, speed
 - **Acceptance:** a debrid or direct 4K HDR file plays smoothly; killing a stream URL makes the
@@ -125,3 +125,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   searched for its dependencies.
 - 2026-10-20: `tauri dev` did not copy libmpv-2.dll beside the dev executable; debug builds now also
   load it from src-tauri/lib, the error lists every path tried, and a failed load is retried.
+- 2026-10-20: M4 libmpv embedded with hwdec=auto-safe; owner confirmed video plays on Windows. (fb1a62b)
+- 2026-10-20: M4 auto-play and fallback implemented (not yet ticked: needs a Windows check). Episode
+  click / Play starts the best direct or debrid stream; the player moves down the ranked list when
+  a stream errors, does not start within 30 s, or ends >2 min before its duration, resuming at the
+  same position. Manual picks fall back to the rest of the list. player/queue.rs, 11 tests.
