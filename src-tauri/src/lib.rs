@@ -1,16 +1,18 @@
 mod auth;
 mod ranking;
 mod secrets;
+mod settings;
 mod stremio;
 
 use serde_json::Value;
 use std::sync::Mutex;
+use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use auth::Session;
-use ranking::score::ScoringRules;
 use ranking::RankedResults;
 use secrets::{KeyringStore, SecretStore};
+use settings::{Settings, SettingsStore};
 use stremio::addons::{self, Addon, AddonError};
 use stremio::api::{StremioApi, ADDON_TIMEOUT, DEFAULT_BASE_URL};
 use stremio::catalog::{self, CatalogRef, MetaPreview, CINEMETA_URL};
@@ -24,6 +26,8 @@ struct AppState {
     /// Addon descriptors the app may request resources from: the user's collection as last
     /// read from Stremio. Cinemeta is always allowed as the default source.
     sources: Mutex<Vec<Value>>,
+    settings: Mutex<Settings>,
+    settings_store: SettingsStore,
 }
 
 impl AppState {
@@ -284,7 +288,28 @@ async fn streams_fetch(
         .collect();
     let results =
         streams::fetch_streams(&state.api, targets, &kind, &video_id, STREAM_TIMEOUT).await;
-    Ok(ranking::rank_results(results, &ScoringRules::default()))
+    let settings = state.settings.lock().unwrap().clone();
+    Ok(ranking::rank_results(
+        results,
+        &settings.scoring_rules(),
+        &settings.filters,
+    ))
+}
+
+#[tauri::command]
+fn settings_get(state: tauri::State<'_, AppState>) -> Settings {
+    state.settings.lock().unwrap().clone()
+}
+
+/// Saves new settings to disk and applies them to the next stream ranking.
+#[tauri::command]
+fn settings_set(state: tauri::State<'_, AppState>, settings: Settings) -> Result<Settings, String> {
+    state
+        .settings_store
+        .save(&settings)
+        .map_err(|e| e.to_string())?;
+    *state.settings.lock().unwrap() = settings.clone();
+    Ok(settings)
 }
 
 /// Opens an addon's configure page in the default browser.
@@ -306,10 +331,17 @@ async fn addons_configure(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(AppState {
-            api: StremioApi::new(DEFAULT_BASE_URL),
-            secrets: Box::new(KeyringStore),
-            sources: Mutex::new(Vec::new()),
+        .setup(|app| {
+            let config_dir = app.path().app_config_dir()?;
+            let settings_store = SettingsStore::new(&config_dir);
+            app.manage(AppState {
+                api: StremioApi::new(DEFAULT_BASE_URL),
+                secrets: Box::new(KeyringStore),
+                sources: Mutex::new(Vec::new()),
+                settings: Mutex::new(settings_store.load()),
+                settings_store,
+            });
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             auth_restore,
@@ -325,7 +357,9 @@ pub fn run() {
             catalog_fetch,
             search_catalogs,
             meta_details,
-            streams_fetch
+            streams_fetch,
+            settings_get,
+            settings_set
         ])
         .run(tauri::generate_context!())
         .expect("error while running Spaceport");

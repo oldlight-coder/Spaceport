@@ -1,12 +1,14 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { logout, Session, User } from "../api/auth";
+import { getSettings, saveSettings, Settings } from "../api/settings";
+import Avatar from "../components/Avatar";
 import { OpenTitleContext, TitleRef } from "../navigation";
-import AddonsScreen from "./AddonsScreen";
 import BoardScreen from "./BoardScreen";
 import DetailsScreen from "./DetailsScreen";
 import DiscoverScreen from "./DiscoverScreen";
 import LibraryScreen from "./LibraryScreen";
 import SearchScreen from "./SearchScreen";
+import SettingsScreen from "./SettingsScreen";
 
 interface Props {
   user: User;
@@ -19,9 +21,8 @@ const PAGES = {
   series: "Series",
   anime: "Anime",
   library: "Library",
-  addons: "Addons",
 } as const;
-type Page = keyof typeof PAGES | "search";
+type Page = keyof typeof PAGES | "search" | "settings";
 
 export default function HomeScreen({ user, onSession }: Props) {
   const [busy, setBusy] = useState(false);
@@ -29,14 +30,30 @@ export default function HomeScreen({ user, onSession }: Props) {
   const [title, setTitle] = useState<TitleRef | null>(null);
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getSettings()
+      .then(setSettings)
+      .catch((e) => setSettingsError(String(e)));
+  }, []);
+
+  async function updateSettings(next: Settings) {
+    setSettings(await saveSettings(next));
+  }
+
+  function go(next: Page) {
+    setPage(next);
+    setTitle(null);
+  }
 
   function search(event: FormEvent) {
     event.preventDefault();
     const term = input.trim();
     if (!term) return;
     setQuery(term);
-    setPage("search");
-    setTitle(null);
+    go("search");
   }
 
   function openTitle(next: TitleRef) {
@@ -63,10 +80,7 @@ export default function HomeScreen({ user, onSession }: Props) {
               <button
                 key={key}
                 className={key === page ? "tab active" : "tab"}
-                onClick={() => {
-                  setPage(key);
-                  setTitle(null);
-                }}
+                onClick={() => go(key)}
               >
                 {PAGES[key]}
               </button>
@@ -81,9 +95,19 @@ export default function HomeScreen({ user, onSession }: Props) {
               aria-label="Search all addons"
             />
           </form>
-          <span className="muted user-email">{user.email}</span>
-          <button className="secondary" onClick={signOut} disabled={busy}>
-            Sign out
+          <button
+            className={page === "settings" ? "settings-button active" : "settings-button"}
+            onClick={() => go("settings")}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <Avatar email={user.email} avatar={settings?.avatar ?? null} size={28} />
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-4a.5.5 0 0 0-.5.4l-.4 2.6a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5c.1.2.4.3.6.2l2.5-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .3.2.4.5.4h4c.3 0 .5-.2.5-.4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"
+              />
+            </svg>
           </button>
         </header>
         {title && (
@@ -100,8 +124,19 @@ export default function HomeScreen({ user, onSession }: Props) {
             <DiscoverScreen key={page} type={page} title={PAGES[page]} />
           )}
           {page === "library" && <LibraryScreen />}
-          {page === "addons" && <AddonsScreen />}
           {page === "search" && <SearchScreen query={query} />}
+          {page === "settings" &&
+            (settings ? (
+              <SettingsScreen
+                email={user.email}
+                settings={settings}
+                onChange={updateSettings}
+                onSignOut={signOut}
+                signingOut={busy}
+              />
+            ) : (
+              <p className={settingsError ? "error" : "muted"}>{settingsError ?? "Loading…"}</p>
+            ))}
         </main>
       </div>
     </OpenTitleContext.Provider>

@@ -52,8 +52,14 @@ export interface AddonOutcome {
   error: string | null;
 }
 
+export interface HiddenStream extends RankedStream {
+  hiddenBecause: string;
+}
+
 export interface StreamResults {
   streams: RankedStream[];
+  /** Streams the user's filters removed, still ranked. */
+  hidden: HiddenStream[];
   addons: AddonOutcome[];
 }
 

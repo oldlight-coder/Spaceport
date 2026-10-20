@@ -23,7 +23,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Query all addons' `stream` resource in parallel with per-addon timeout
 - [x] Parser for resolution, HDR/DV, codec, audio, size, seeders, release group, cached flag
 - [x] Scoring rules (seeders, quality, size, language, cached) with unit tests
-- [ ] User filters: max size, min quality, blocked codecs, preferred languages
+- [x] User filters: max size, min quality, blocked codecs, preferred languages
 - [ ] Manual picker with the ranked list
 - **Acceptance:** for a popular movie the top pick is a well-seeded or cached stream within the
   filters; parser tests cover at least 30 real-world stream titles.
@@ -65,6 +65,12 @@ pass on Windows. The owner tests each milestone before the next one starts.
 
 ## Decisions
 (Record any spec changes agreed with the owner here.)
+- 2026-10-20: Settings page brought forward from M8 at the owner's request. A cog button in the top
+  bar (showing the profile picture) opens Settings with Account, Streams and Addons sections; the
+  email and the Addons tab moved there. M8's settings item now adds the remaining settings
+  (subtitle style, auto-skip, cache size) to this page.
+- 2026-10-20: Profile picture added at the owner's request (not in SPEC). Chosen from a local
+  image, shrunk to 128 px and stored only in the local settings file; never uploaded.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -100,4 +106,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-20: M3 scoring (ranking/score.rs): cached/uncached debrid, torrent seeders (log scale, dead
   torrents sink), resolution up to a preferred cap, HDR/DV, source, CAM penalty, audio, preferred
   languages, soft size limit and tiny-file penalty; every point has a reason. 16 tests. Streams panel
-  is ranked best first with the score and its reasons. Rules use defaults until settings exist.
+  is ranked best first with the score and its reasons. Rules use defaults until settings exist. (1e8cc38)
+- 2026-10-20: M3 user filters (ranking/filters.rs) for max size, min quality, blocked codecs, plus
+  audio/subtitle language order and preferred resolution, saved in settings.json in the app config
+  folder. Filtered streams are listed separately with the reason. Settings page with account,
+  profile picture, streams and addons.

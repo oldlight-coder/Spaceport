@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { fetchStreams, Stream } from "../api/streams";
+import { fetchStreams, RankedStream, Stream } from "../api/streams";
 import { useLoad } from "./Loadable";
 import StreamTags from "./StreamTags";
 
@@ -59,36 +59,64 @@ export default function StreamsPanel({ type, videoId, heading, onClose }: Props)
           )}
           <ol className="stream-list">
             {results.data.streams.map((s, i) => (
-              <li key={i} className="stream">
-                <div className="stream-top">
-                  <div className="stream-name">
-                    <span className="badge">{streamKind(s)}</span> {s.name ?? s.addonName}
-                  </div>
-                  <span className="stream-score" title="Spaceport score">
-                    {i === 0 && <span className="best">Best</span>} {Math.round(s.score.total)}
-                  </span>
-                </div>
-                <StreamTags parsed={s.parsed} />
-                {s.title && <pre className="stream-title">{s.title}</pre>}
-                <details className="score-parts">
-                  <summary>Why this score</summary>
-                  <ul>
-                    {s.score.parts.map((p, j) => (
-                      <li key={j} className={p.points < 0 ? "minus" : undefined}>
-                        <span>{p.reason}</span>
-                        <span>
-                          {p.points > 0 ? "+" : ""}
-                          {p.points}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              </li>
+              <StreamItem key={i} stream={s} best={i === 0} />
             ))}
           </ol>
+          {results.data.streams.length === 0 && results.data.hidden.length > 0 && (
+            <p className="muted">Every stream was hidden by your filters.</p>
+          )}
+          {results.data.hidden.length > 0 && (
+            <details className="hidden-streams">
+              <summary>
+                {results.data.hidden.length} hidden by your filters
+              </summary>
+              <ol className="stream-list">
+                {results.data.hidden.map((s, i) => (
+                  <StreamItem key={i} stream={s} note={s.hiddenBecause} />
+                ))}
+              </ol>
+            </details>
+          )}
         </>
       )}
     </aside>
+  );
+}
+
+interface StreamItemProps {
+  stream: RankedStream;
+  best?: boolean;
+  note?: string;
+}
+
+function StreamItem({ stream: s, best, note }: StreamItemProps) {
+  return (
+    <li className={note ? "stream filtered" : "stream"}>
+      <div className="stream-top">
+        <div className="stream-name">
+          <span className="badge">{streamKind(s)}</span> {s.name ?? s.addonName}
+        </div>
+        <span className="stream-score" title="Spaceport score">
+          {best && <span className="best">Best</span>} {Math.round(s.score.total)}
+        </span>
+      </div>
+      {note && <p className="error small">{note}</p>}
+      <StreamTags parsed={s.parsed} />
+      {s.title && <pre className="stream-title">{s.title}</pre>}
+      <details className="score-parts">
+        <summary>Why this score</summary>
+        <ul>
+          {s.score.parts.map((p, j) => (
+            <li key={j} className={p.points < 0 ? "minus" : undefined}>
+              <span>{p.reason}</span>
+              <span>
+                {p.points > 0 ? "+" : ""}
+                {p.points}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </li>
   );
 }
