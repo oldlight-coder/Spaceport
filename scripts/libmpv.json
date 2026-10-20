@@ -1,6 +1,6 @@
 {
   "repository": "shinchiro/mpv-winbuild-cmake",
-  "release": "",
-  "file": "",
-  "sha256": ""
+  "release": "20261020",
+  "file": "mpv-dev-x86_64-20261020-git-6a262d11f6.7z",
+  "sha256": "d16ea67bcc46d4ee9170f05b322d7184768f216f458bef089c3397a6beaff83e"
 }

@@ -59,14 +59,27 @@ async function pin(pinned, tag) {
   return { pinned: next, bytes };
 }
 
+/** 7-Zip from PATH, or from its default install folders when it is installed but not on PATH. */
+function sevenZip() {
+  const candidates = ["7z"];
+  for (const base of [process.env.ProgramFiles, process.env["ProgramFiles(x86)"]]) {
+    if (base) candidates.push(join(base, "7-Zip", "7z.exe"));
+  }
+  for (const candidate of candidates) {
+    const probe = spawnSync(candidate, ["i"], { stdio: "ignore" });
+    if (!probe.error) return candidate;
+  }
+  fail("7-Zip was not found; install it (for example `winget install 7zip.7zip`) and try again");
+}
+
 function extract(archive) {
   const dir = mkdtempSync(join(tmpdir(), "spaceport-libmpv-"));
   const archivePath = join(dir, "mpv-dev.7z");
   writeFileSync(archivePath, archive);
-  const result = spawnSync("7z", ["e", archivePath, `-o${dir}`, dllName, "-y"], {
+  const result = spawnSync(sevenZip(), ["e", archivePath, `-o${dir}`, dllName, "-y"], {
     stdio: "inherit",
   });
-  if (result.error) fail("7-Zip (7z) is not on PATH; install it and try again");
+  if (result.error) fail(`could not run 7-Zip: ${result.error.message}`);
   if (result.status !== 0 || !existsSync(join(dir, dllName))) {
     fail(`could not extract ${dllName} from the archive`);
   }
