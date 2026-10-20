@@ -35,6 +35,16 @@ export interface Stream {
   parsed: ParsedStream;
 }
 
+export interface ScorePart {
+  reason: string;
+  points: number;
+}
+
+/** A stream with its score; streams come back best first. */
+export interface RankedStream extends Stream {
+  score: { total: number; parts: ScorePart[] };
+}
+
 export interface AddonOutcome {
   addonName: string;
   transportUrl: string;
@@ -43,7 +53,7 @@ export interface AddonOutcome {
 }
 
 export interface StreamResults {
-  streams: Stream[];
+  streams: RankedStream[];
   addons: AddonOutcome[];
 }
 

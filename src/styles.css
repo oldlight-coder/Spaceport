@@ -582,3 +582,52 @@ select {
   background: #3d2323;
   color: var(--danger);
 }
+
+.stream-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stream-score {
+  flex: none;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.stream-score .best {
+  margin-right: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #0f1115;
+  font-size: 11px;
+}
+
+.score-parts {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.score-parts summary {
+  cursor: pointer;
+}
+
+.score-parts ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.score-parts li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-parts li.minus {
+  color: var(--danger);
+}

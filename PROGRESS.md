@@ -22,7 +22,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 ## M3. Stream collection and ranking
 - [x] Query all addons' `stream` resource in parallel with per-addon timeout
 - [x] Parser for resolution, HDR/DV, codec, audio, size, seeders, release group, cached flag
-- [ ] Scoring rules (seeders, quality, size, language, cached) with unit tests
+- [x] Scoring rules (seeders, quality, size, language, cached) with unit tests
 - [ ] User filters: max size, min quality, blocked codecs, preferred languages
 - [ ] Manual picker with the ranked list
 - **Acceptance:** for a popular movie the top pick is a well-seeded or cached stream within the
@@ -96,4 +96,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-20: M3 stream parser (src-tauri/src/ranking/parse.rs): resolution, HDR/DV, codec, bit depth,
   audio/channels, size, seeders, group, source, debrid cached flag, languages (incl. flag emoji).
   36 tests over 39 titles; 8 are real Torrentio/TorBox results from the owner, the rest follow
-  common addon formats. Parsed tags shown in the streams panel.
+  common addon formats. Parsed tags shown in the streams panel. (1f10578)
+- 2026-10-20: M3 scoring (ranking/score.rs): cached/uncached debrid, torrent seeders (log scale, dead
+  torrents sink), resolution up to a preferred cap, HDR/DV, source, CAM penalty, audio, preferred
+  languages, soft size limit and tiny-file penalty; every point has a reason. 16 tests. Streams panel
+  is ranked best first with the score and its reasons. Rules use defaults until settings exist.

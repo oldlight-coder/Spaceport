@@ -8,13 +8,15 @@ use std::sync::Mutex;
 use tauri_plugin_opener::OpenerExt;
 
 use auth::Session;
+use ranking::score::ScoringRules;
+use ranking::RankedResults;
 use secrets::{KeyringStore, SecretStore};
 use stremio::addons::{self, Addon, AddonError};
 use stremio::api::{StremioApi, ADDON_TIMEOUT, DEFAULT_BASE_URL};
 use stremio::catalog::{self, CatalogRef, MetaPreview, CINEMETA_URL};
 use stremio::library::{visible_items, LibraryItem};
 use stremio::meta::{self, MetaDetails};
-use stremio::streams::{self, StreamResults, STREAM_TIMEOUT};
+use stremio::streams::{self, STREAM_TIMEOUT};
 
 struct AppState {
     api: StremioApi,
@@ -259,13 +261,13 @@ async fn meta_details(
 }
 
 /// Streams for one video (a movie id or an episode's video id) from every addon that declares
-/// `stream` for it, all asked at once with a per-addon timeout.
+/// `stream` for it, all asked at once with a per-addon timeout, best first.
 #[tauri::command]
 async fn streams_fetch(
     state: tauri::State<'_, AppState>,
     kind: String,
     video_id: String,
-) -> Result<StreamResults, String> {
+) -> Result<RankedResults, String> {
     let sources = state.sources().await?;
     let urls = addons::resource_sources(&sources, "stream", &kind, &video_id, None);
     let views = addons::addon_views(&sources);
@@ -280,7 +282,9 @@ async fn streams_fetch(
             (name, url)
         })
         .collect();
-    Ok(streams::fetch_streams(&state.api, targets, &kind, &video_id, STREAM_TIMEOUT).await)
+    let results =
+        streams::fetch_streams(&state.api, targets, &kind, &video_id, STREAM_TIMEOUT).await;
+    Ok(ranking::rank_results(results, &ScoringRules::default()))
 }
 
 /// Opens an addon's configure page in the default browser.

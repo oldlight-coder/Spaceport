@@ -277,7 +277,9 @@ fn audio(text: &str) -> Vec<String> {
     let dts_x = DTS_X.is_match(text);
     let dts_hd = DTS_HD.is_match(text);
     // `\bdd\b` also matches the start of "DD+", so only count a DD not followed by '+'.
-    let plain_dd = DD.find_iter(text).any(|m| !text[m.end()..].starts_with('+'));
+    let plain_dd = DD
+        .find_iter(text)
+        .any(|m| !text[m.end()..].starts_with('+'));
     let checks: [(bool, &str); 11] = [
         (ATMOS.is_match(text), "Atmos"),
         (TRUEHD.is_match(text), "TrueHD"),
