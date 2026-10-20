@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Episode, getMeta, MetaDetails } from "../api/meta";
+import { RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
 import { TitleRef } from "../navigation";
@@ -40,6 +41,8 @@ interface StreamTarget {
 
 function Details({ meta }: { meta: MetaDetails }) {
   const [target, setTarget] = useState<StreamTarget | null>(null);
+  // Until the player arrives (M4) a pick is only confirmed here.
+  const [picked, setPicked] = useState<{ heading: string; stream: RankedStream } | null>(null);
   const openEpisode = (ep: Episode) =>
     setTarget({
       videoId: ep.id,
@@ -98,6 +101,19 @@ function Details({ meta }: { meta: MetaDetails }) {
           </div>
         </div>
       </header>
+      {picked && (
+        <div className="picked" role="status">
+          <span>
+            Picked for {picked.heading}:{" "}
+            <strong>{picked.stream.name ?? picked.stream.addonName}</strong>
+            {picked.stream.parsed.releaseGroup && ` (${picked.stream.parsed.releaseGroup})`}. The
+            player comes next.
+          </span>
+          <button className="secondary" onClick={() => setPicked(null)} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
       {meta.seasons.length > 0 && <Seasons meta={meta} onOpen={openEpisode} />}
       {meta.videos.length > 0 && (
         <section>
@@ -112,6 +128,10 @@ function Details({ meta }: { meta: MetaDetails }) {
           videoId={target.videoId}
           heading={target.heading}
           onClose={() => setTarget(null)}
+          onPick={(stream) => {
+            setPicked({ heading: target.heading, stream });
+            setTarget(null);
+          }}
         />
       )}
     </>

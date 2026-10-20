@@ -24,7 +24,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Parser for resolution, HDR/DV, codec, audio, size, seeders, release group, cached flag
 - [x] Scoring rules (seeders, quality, size, language, cached) with unit tests
 - [x] User filters: max size, min quality, blocked codecs, preferred languages
-- [ ] Manual picker with the ranked list
+- [x] Manual picker with the ranked list
 - **Acceptance:** for a popular movie the top pick is a well-seeded or cached stream within the
   filters; parser tests cover at least 30 real-world stream titles.
 
@@ -110,4 +110,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-20: M3 user filters (ranking/filters.rs) for max size, min quality, blocked codecs, plus
   audio/subtitle language order and preferred resolution, saved in settings.json in the app config
   folder. Filtered streams are listed separately with the reason. Settings page with account,
-  profile picture, streams and addons.
+  profile picture, streams and addons. (2d7f266)
+- 2026-10-20: M3 manual picker: ranked list with quality chips (counts per resolution), addon
+  choice, Play per stream (disabled for web/YouTube), hidden streams pickable too. The pick is
+  handed to the details page, which will start the player in M4. M3 code complete.
