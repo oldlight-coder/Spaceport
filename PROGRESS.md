@@ -113,4 +113,9 @@ pass on Windows. The owner tests each milestone before the next one starts.
   profile picture, streams and addons. (2d7f266)
 - 2026-10-20: M3 manual picker: ranked list with quality chips (counts per resolution), addon
   choice, Play per stream (disabled for web/YouTube), hidden streams pickable too. The pick is
-  handed to the details page, which will start the player in M4. M3 code complete.
+  handed to the details page, which will start the player in M4. M3 code complete. (0e6525b)
+- 2026-10-20: M3 accepted by owner on Windows.
+- 2026-10-20: M4 libmpv player implemented (not yet ticked: needs a first run on Windows). libmpv is
+  loaded at runtime from the bundled libmpv-2.dll and draws into a child window over the web
+  view with hwdec=auto-safe; mpv's own controls until our controls item. `pnpm run setup` pins
+  and verifies the shinchiro build (scripts/libmpv.json).

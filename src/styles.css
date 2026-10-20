@@ -854,3 +854,8 @@ button.chip.active {
   border-radius: 8px;
   background: #1a1f38;
 }
+
+.picked.error-notice {
+  border-color: var(--danger);
+  background: #2a1717;
+}

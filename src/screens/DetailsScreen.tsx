@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Episode, getMeta, MetaDetails } from "../api/meta";
+import { onPlayerEvent, openPlayer } from "../api/player";
 import { RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
@@ -41,8 +42,33 @@ interface StreamTarget {
 
 function Details({ meta }: { meta: MetaDetails }) {
   const [target, setTarget] = useState<StreamTarget | null>(null);
-  // Until the player arrives (M4) a pick is only confirmed here.
-  const [picked, setPicked] = useState<{ heading: string; stream: RankedStream } | null>(null);
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+
+  useEffect(() => {
+    const unlisten = onPlayerEvent((event) => {
+      if (event.kind === "failed") {
+        setNotice({ text: `Playback failed: ${event.message}`, error: true });
+      }
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+  }, []);
+
+  async function play(heading: string, stream: RankedStream) {
+    setNotice(null);
+    if (!stream.url) {
+      // Torrents need the built-in engine, which arrives in M5.
+      setNotice({ text: "Torrent streams can't be played yet; pick a direct or debrid link." });
+      return;
+    }
+    try {
+      const title = heading === meta.name ? meta.name : `${meta.name} · ${heading}`;
+      await openPlayer(stream.url, title);
+    } catch (e) {
+      setNotice({ text: String(e), error: true });
+    }
+  }
   const openEpisode = (ep: Episode) =>
     setTarget({
       videoId: ep.id,
@@ -101,15 +127,10 @@ function Details({ meta }: { meta: MetaDetails }) {
           </div>
         </div>
       </header>
-      {picked && (
-        <div className="picked" role="status">
-          <span>
-            Picked for {picked.heading}:{" "}
-            <strong>{picked.stream.name ?? picked.stream.addonName}</strong>
-            {picked.stream.parsed.releaseGroup && ` (${picked.stream.parsed.releaseGroup})`}. The
-            player comes next.
-          </span>
-          <button className="secondary" onClick={() => setPicked(null)} aria-label="Dismiss">
+      {notice && (
+        <div className={notice.error ? "picked error-notice" : "picked"} role="status">
+          <span>{notice.text}</span>
+          <button className="secondary" onClick={() => setNotice(null)} aria-label="Dismiss">
             ✕
           </button>
         </div>
@@ -129,8 +150,8 @@ function Details({ meta }: { meta: MetaDetails }) {
           heading={target.heading}
           onClose={() => setTarget(null)}
           onPick={(stream) => {
-            setPicked({ heading: target.heading, stream });
             setTarget(null);
+            play(target.heading, stream);
           }}
         />
       )}

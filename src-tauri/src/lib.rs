@@ -1,4 +1,5 @@
 mod auth;
+mod player;
 mod ranking;
 mod secrets;
 mod settings;
@@ -20,7 +21,7 @@ use stremio::library::{visible_items, LibraryItem};
 use stremio::meta::{self, MetaDetails};
 use stremio::streams::{self, STREAM_TIMEOUT};
 
-struct AppState {
+pub(crate) struct AppState {
     api: StremioApi,
     secrets: Box<dyn SecretStore>,
     /// Addon descriptors the app may request resources from: the user's collection as last
@@ -28,6 +29,7 @@ struct AppState {
     sources: Mutex<Vec<Value>>,
     settings: Mutex<Settings>,
     settings_store: SettingsStore,
+    player: player::Player,
 }
 
 impl AppState {
@@ -296,6 +298,26 @@ async fn streams_fetch(
     ))
 }
 
+/// Plays a direct (HTTP) link in the embedded player. Runs on the main thread because it
+/// creates the video window.
+#[tauri::command]
+fn player_open(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+    title: String,
+) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("only web links can be played for now".to_string());
+    }
+    state.player.open(&app, &url, &title)
+}
+
+#[tauri::command]
+fn player_close(state: tauri::State<'_, AppState>) {
+    state.player.close();
+}
+
 #[tauri::command]
 fn settings_get(state: tauri::State<'_, AppState>) -> Settings {
     state.settings.lock().unwrap().clone()
@@ -340,8 +362,16 @@ pub fn run() {
                 sources: Mutex::new(Vec::new()),
                 settings: Mutex::new(settings_store.load()),
                 settings_store,
+                player: player::Player::default(),
             });
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Resized(size) = event {
+                if let Some(state) = window.try_state::<AppState>() {
+                    state.player.resize(size.width, size.height);
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             auth_restore,
@@ -359,7 +389,9 @@ pub fn run() {
             meta_details,
             streams_fetch,
             settings_get,
-            settings_set
+            settings_set,
+            player_open,
+            player_close
         ])
         .run(tauri::generate_context!())
         .expect("error while running Spaceport");
