@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { logout, Session, User } from "../api/auth";
 import AddonsScreen from "./AddonsScreen";
+import BoardScreen from "./BoardScreen";
 import LibraryScreen from "./LibraryScreen";
 
 interface Props {
@@ -8,12 +9,12 @@ interface Props {
   onSession: (session: Session) => void;
 }
 
-const PAGES = { library: "Library", addons: "Addons" } as const;
+const PAGES = { board: "Home", library: "Library", addons: "Addons" } as const;
 type Page = keyof typeof PAGES;
 
 export default function HomeScreen({ user, onSession }: Props) {
   const [busy, setBusy] = useState(false);
-  const [page, setPage] = useState<Page>("library");
+  const [page, setPage] = useState<Page>("board");
 
   async function signOut() {
     setBusy(true);
@@ -44,7 +45,11 @@ export default function HomeScreen({ user, onSession }: Props) {
           Sign out
         </button>
       </header>
-      <main className="content">{page === "library" ? <LibraryScreen /> : <AddonsScreen />}</main>
+      <main className="content">
+        {page === "board" && <BoardScreen />}
+        {page === "library" && <LibraryScreen />}
+        {page === "addons" && <AddonsScreen />}
+      </main>
     </div>
   );
 }

@@ -161,6 +161,44 @@ section + section {
   min-width: 0;
 }
 
+.poster-row {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 0 0 8px;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.poster-row .poster-card {
+  flex: 0 0 140px;
+}
+
+.poster-row .poster-card.landscape {
+  flex-basis: 248px;
+}
+
+.poster-card.landscape img,
+.poster-card.landscape .poster-placeholder {
+  aspect-ratio: 16 / 9;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.row h2 {
+  margin-bottom: 12px;
+}
+
+.row-meta {
+  font-size: 13px;
+  font-weight: 400;
+  margin-left: 6px;
+}
+
 .poster-card img,
 .poster-placeholder {
   width: 100%;

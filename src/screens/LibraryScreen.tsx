@@ -1,5 +1,6 @@
-import { LibraryItem, listLibrary } from "../api/library";
+import { listLibrary } from "../api/library";
 import { LoadableList, useLoad } from "../components/Loadable";
+import PosterCard from "../components/PosterCard";
 
 export default function LibraryScreen() {
   const [library, reload] = useLoad(listLibrary);
@@ -7,25 +8,14 @@ export default function LibraryScreen() {
     <section>
       <h2>Library</h2>
       <LoadableList state={library} onRetry={reload} empty="Your library is empty.">
-        {(items) => <LibraryGrid items={items} />}
+        {(items) => (
+          <ul className="poster-grid">
+            {items.map((item) => (
+              <PosterCard key={item.id} name={item.name || item.id} poster={item.poster} />
+            ))}
+          </ul>
+        )}
       </LoadableList>
     </section>
-  );
-}
-
-function LibraryGrid({ items }: { items: LibraryItem[] }) {
-  return (
-    <ul className="poster-grid">
-      {items.map((item) => (
-        <li key={item.id} className="poster-card" title={item.name}>
-          {item.poster ? (
-            <img src={item.poster} alt="" loading="lazy" referrerPolicy="no-referrer" />
-          ) : (
-            <div className="poster-placeholder">{item.name.slice(0, 1)}</div>
-          )}
-          <span className="poster-title">{item.name || item.id}</span>
-        </li>
-      ))}
-    </ul>
   );
 }

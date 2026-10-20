@@ -150,6 +150,15 @@ pub fn install(collection: &mut Vec<Value>, transport_url_value: &str, manifest:
     }));
 }
 
+/// A descriptor for an addon Spaceport uses by default without it being in the account.
+pub fn builtin_descriptor(transport_url_value: &str, manifest: Value) -> Value {
+    json!({
+        "transportUrl": transport_url_value,
+        "manifest": manifest,
+        "flags": { "official": true, "protected": true },
+    })
+}
+
 pub fn remove(collection: &mut Vec<Value>, url: &str) -> Result<(), AddonError> {
     let index = collection
         .iter()

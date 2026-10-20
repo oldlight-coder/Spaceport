@@ -7,11 +7,15 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::time::Duration;
 
 use super::addons::AddonCollection;
 use super::library::RawLibraryItem;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.strem.io";
+
+/// Default time limit for a single addon request.
+pub const ADDON_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
@@ -88,7 +92,7 @@ pub struct StremioApi {
 impl StremioApi {
     pub fn new(base_url: impl Into<String>) -> Self {
         let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
+            .timeout(Duration::from_secs(20))
             .build()
             .expect("failed to build HTTP client");
         Self {
@@ -169,9 +173,16 @@ impl StremioApi {
 
     /// Downloads an addon manifest from the URL the user entered.
     pub async fn fetch_manifest(&self, url: &str) -> Result<Value, ApiError> {
+        self.addon_json(url, ADDON_TIMEOUT).await
+    }
+
+    /// GETs a JSON resource from an installed addon with its own timeout, so one slow addon
+    /// cannot hold up the others.
+    pub async fn addon_json(&self, url: &str, timeout: Duration) -> Result<Value, ApiError> {
         let response = self
             .http
             .get(url)
+            .timeout(timeout)
             .send()
             .await
             .and_then(|r| r.error_for_status())
@@ -182,7 +193,7 @@ impl StremioApi {
         response
             .json()
             .await
-            .map_err(|_| ApiError::Addon("the addon URL did not return a manifest".to_string()))
+            .map_err(|_| ApiError::Addon("the addon did not return JSON".to_string()))
     }
 
     /// Every entry of the library datastore, including removed and temporary ones.

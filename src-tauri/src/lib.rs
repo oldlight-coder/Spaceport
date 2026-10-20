@@ -3,17 +3,22 @@ mod secrets;
 mod stremio;
 
 use serde_json::Value;
+use std::sync::Mutex;
 use tauri_plugin_opener::OpenerExt;
 
 use auth::Session;
 use secrets::{KeyringStore, SecretStore};
 use stremio::addons::{self, Addon, AddonError};
-use stremio::api::{StremioApi, DEFAULT_BASE_URL};
+use stremio::api::{StremioApi, ADDON_TIMEOUT, DEFAULT_BASE_URL};
+use stremio::catalog::{self, CatalogRef, MetaPreview, CINEMETA_URL};
 use stremio::library::{visible_items, LibraryItem};
 
 struct AppState {
     api: StremioApi,
     secrets: Box<dyn SecretStore>,
+    /// Addon descriptors the app may request resources from: the user's collection as last
+    /// read from Stremio. Cinemeta is always allowed as the default source.
+    sources: Mutex<Vec<Value>>,
 }
 
 impl AppState {
@@ -22,10 +27,33 @@ impl AppState {
     }
 
     async fn addon_collection(&self, key: &str) -> Result<Vec<Value>, String> {
-        self.api
+        let collection = self
+            .api
             .addon_collection(key)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        self.set_sources(collection.clone());
+        Ok(collection)
+    }
+
+    fn set_sources(&self, sources: Vec<Value>) {
+        *self.sources.lock().unwrap() = sources;
+    }
+
+    /// Only addons the user installed (or the Cinemeta default) may be contacted.
+    fn ensure_source(&self, transport_url: &str) -> Result<(), String> {
+        let known = transport_url == CINEMETA_URL
+            || self
+                .sources
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|d| d.get("transportUrl").and_then(Value::as_str) == Some(transport_url));
+        if known {
+            Ok(())
+        } else {
+            Err("this addon is not installed".to_string())
+        }
     }
 
     /// Reads the collection from Stremio, applies `change` and writes it back, so edits made
@@ -41,7 +69,9 @@ impl AppState {
             .set_addon_collection(&key, &collection)
             .await
             .map_err(|e| e.to_string())?;
-        Ok(addons::addon_views(&collection))
+        let views = addons::addon_views(&collection);
+        self.set_sources(collection);
+        Ok(views)
     }
 }
 
@@ -125,6 +155,42 @@ async fn addons_reorder(
     state.edit_addons(|c| addons::reorder(c, &order)).await
 }
 
+/// The catalogs shown as Home rows. Falls back to Cinemeta when no installed addon has any.
+#[tauri::command]
+async fn home_catalogs(state: tauri::State<'_, AppState>) -> Result<Vec<CatalogRef>, String> {
+    let key = state.auth_key()?;
+    let mut sources = state.addon_collection(&key).await?;
+    if !catalog::has_catalog_addon(&sources) {
+        let manifest = state
+            .api
+            .fetch_manifest(CINEMETA_URL)
+            .await
+            .map_err(|e| e.to_string())?;
+        sources.insert(0, addons::builtin_descriptor(CINEMETA_URL, manifest));
+    }
+    Ok(catalog::home_catalogs(&sources))
+}
+
+/// Fetches one page of a catalog from an installed addon.
+#[tauri::command]
+async fn catalog_fetch(
+    state: tauri::State<'_, AppState>,
+    transport_url: String,
+    kind: String,
+    id: String,
+    extra: Vec<(String, String)>,
+) -> Result<Vec<MetaPreview>, String> {
+    state.ensure_source(&transport_url)?;
+    let url = catalog::resource_url(&transport_url, "catalog", &kind, &id, &extra)
+        .map_err(|e| e.to_string())?;
+    let body = state
+        .api
+        .addon_json(&url, ADDON_TIMEOUT)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(catalog::parse_metas(&body))
+}
+
 /// Opens an addon's configure page in the default browser.
 #[tauri::command]
 async fn addons_configure(
@@ -147,6 +213,7 @@ pub fn run() {
         .manage(AppState {
             api: StremioApi::new(DEFAULT_BASE_URL),
             secrets: Box::new(KeyringStore),
+            sources: Mutex::new(Vec::new()),
         })
         .invoke_handler(tauri::generate_handler![
             auth_restore,
@@ -157,7 +224,9 @@ pub fn run() {
             addons_install,
             addons_remove,
             addons_reorder,
-            addons_configure
+            addons_configure,
+            home_catalogs,
+            catalog_fetch
         ])
         .run(tauri::generate_context!())
         .expect("error while running Spaceport");
