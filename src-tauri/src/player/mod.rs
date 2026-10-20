@@ -4,7 +4,7 @@ mod mpv;
 mod surface;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -50,26 +50,54 @@ struct Session {
 
 #[derive(Default)]
 pub struct Player {
-    lib: OnceLock<Result<Arc<MpvLib>, String>>,
+    lib: Mutex<Option<Arc<MpvLib>>>,
     session: Mutex<Option<Session>>,
 }
 
-fn library_path(app: &AppHandle) -> PathBuf {
-    let bundled = app.path().resource_dir().map(|dir| dir.join(LIBRARY_FILE));
-    match bundled {
-        Ok(path) if path.exists() => path,
-        _ => std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join(LIBRARY_FILE)))
-            .unwrap_or_else(|| PathBuf::from(LIBRARY_FILE)),
+/// Where libmpv may be, in order: next to the installed app (bundle resources), next to the
+/// executable, and in debug builds the `src-tauri/lib` folder `pnpm run setup` fills, since
+/// `tauri dev` does not always copy resources beside the dev executable.
+fn library_candidates(app: &AppHandle) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        candidates.push(dir.join(LIBRARY_FILE));
+        candidates.push(dir.join("lib").join(LIBRARY_FILE));
     }
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(PathBuf::from))
+    {
+        candidates.push(dir.join(LIBRARY_FILE));
+    }
+    if cfg!(debug_assertions) {
+        candidates.push(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("lib")
+                .join(LIBRARY_FILE),
+        );
+    }
+    candidates.dedup();
+    candidates
 }
 
 impl Player {
+    /// Loads libmpv once it is found. A failure is not remembered, so the next Play tries again.
     fn lib(&self, app: &AppHandle) -> Result<Arc<MpvLib>, String> {
-        self.lib
-            .get_or_init(|| MpvLib::load(&library_path(app)))
-            .clone()
+        let mut lib = self.lib.lock().unwrap();
+        if let Some(loaded) = lib.as_ref() {
+            return Ok(loaded.clone());
+        }
+        let candidates = library_candidates(app);
+        let Some(path) = candidates.iter().find(|p| p.is_file()) else {
+            let tried: Vec<String> = candidates.iter().map(|p| p.display().to_string()).collect();
+            return Err(format!(
+                "the player library {LIBRARY_FILE} was not found (run `pnpm run setup`). Looked in: {}",
+                tried.join("; ")
+            ));
+        };
+        let loaded = MpvLib::load(path)?;
+        *lib = Some(loaded.clone());
+        Ok(loaded)
     }
 
     /// Starts playing `url`, reusing the open player if there is one. Main thread only.

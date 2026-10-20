@@ -123,3 +123,5 @@ pass on Windows. The owner tests each milestone before the next one starts.
   checked: all are Windows system DLLs except vulkan-1.dll (installed by GPU drivers). Load errors
   now give the path, the Windows reason and name a missing Vulkan runtime; libmpv's folder is
   searched for its dependencies.
+- 2026-10-20: `tauri dev` did not copy libmpv-2.dll beside the dev executable; debug builds now also
+  load it from src-tauri/lib, the error lists every path tried, and a failed load is retried.
