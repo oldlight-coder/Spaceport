@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { logout, Session, User } from "../api/auth";
 import { OpenTitleContext, TitleRef } from "../navigation";
 import AddonsScreen from "./AddonsScreen";
@@ -6,6 +6,7 @@ import BoardScreen from "./BoardScreen";
 import DetailsScreen from "./DetailsScreen";
 import DiscoverScreen from "./DiscoverScreen";
 import LibraryScreen from "./LibraryScreen";
+import SearchScreen from "./SearchScreen";
 
 interface Props {
   user: User;
@@ -20,12 +21,23 @@ const PAGES = {
   library: "Library",
   addons: "Addons",
 } as const;
-type Page = keyof typeof PAGES;
+type Page = keyof typeof PAGES | "search";
 
 export default function HomeScreen({ user, onSession }: Props) {
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState<Page>("board");
   const [title, setTitle] = useState<TitleRef | null>(null);
+  const [input, setInput] = useState("");
+  const [query, setQuery] = useState("");
+
+  function search(event: FormEvent) {
+    event.preventDefault();
+    const term = input.trim();
+    if (!term) return;
+    setQuery(term);
+    setPage("search");
+    setTitle(null);
+  }
 
   function openTitle(next: TitleRef) {
     setTitle(next);
@@ -47,7 +59,7 @@ export default function HomeScreen({ user, onSession }: Props) {
         <header className="topbar">
           <span className="brand">Spaceport</span>
           <nav className="tabs">
-            {(Object.keys(PAGES) as Page[]).map((key) => (
+            {(Object.keys(PAGES) as (keyof typeof PAGES)[]).map((key) => (
               <button
                 key={key}
                 className={key === page ? "tab active" : "tab"}
@@ -60,7 +72,16 @@ export default function HomeScreen({ user, onSession }: Props) {
               </button>
             ))}
           </nav>
-          <span className="muted spacer">{user.email}</span>
+          <form className="search-form spacer" onSubmit={search} role="search">
+            <input
+              type="search"
+              placeholder="Search"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              aria-label="Search all addons"
+            />
+          </form>
+          <span className="muted user-email">{user.email}</span>
           <button className="secondary" onClick={signOut} disabled={busy}>
             Sign out
           </button>
@@ -80,6 +101,7 @@ export default function HomeScreen({ user, onSession }: Props) {
           )}
           {page === "library" && <LibraryScreen />}
           {page === "addons" && <AddonsScreen />}
+          {page === "search" && <SearchScreen query={query} />}
         </main>
       </div>
     </OpenTitleContext.Provider>

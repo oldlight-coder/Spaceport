@@ -68,6 +68,10 @@ struct Extras {
     supports_skip: bool,
     /// Some required input other than a genre from a fixed list, such as a search term.
     needs_input: bool,
+    /// The catalog accepts a `search` term.
+    supports_search: bool,
+    /// The catalog requires something besides a search term.
+    needs_more_than_search: bool,
 }
 
 fn string_list(value: Option<&Value>) -> Vec<String> {
@@ -110,15 +114,30 @@ fn extras(catalog: &Value) -> Extras {
     let genre_required = required.iter().any(|r| r == "genre");
     let needs_input = required.iter().any(|r| r != "genre" || genres.is_empty());
 
+    let accepts = |name: &str| {
+        named(name).is_some()
+            || legacy_supported.iter().any(|s| s == name)
+            || required.iter().any(|r| r == name)
+    };
     Extras {
-        supports_skip: named("skip").is_some() || legacy_supported.iter().any(|s| s == "skip"),
+        supports_skip: accepts("skip"),
+        supports_search: accepts("search"),
+        needs_more_than_search: required.iter().any(|r| r != "search"),
         genres,
         genre_required,
         needs_input,
     }
 }
 
-fn catalog_refs(descriptor: &Value) -> Vec<CatalogRef> {
+#[derive(Clone, Copy, PartialEq)]
+enum Purpose {
+    /// Catalogs that list titles without a search term.
+    Browse,
+    /// Catalogs that answer a search term.
+    Search,
+}
+
+fn catalog_refs(descriptor: &Value, purpose: Purpose) -> Vec<CatalogRef> {
     let (Some(addon), Some(manifest)) = (
         Addon::from_descriptor(descriptor),
         descriptor.get("manifest"),
@@ -134,7 +153,11 @@ fn catalog_refs(descriptor: &Value) -> Vec<CatalogRef> {
         .flatten()
         .filter_map(|c| {
             let extras = extras(c);
-            if extras.needs_input {
+            let usable = match purpose {
+                Purpose::Browse => !extras.needs_input,
+                Purpose::Search => extras.supports_search && !extras.needs_more_than_search,
+            };
+            if !usable {
                 return None;
             }
             let kind = c.get("type")?.as_str()?.to_string();
@@ -162,7 +185,18 @@ fn catalog_refs(descriptor: &Value) -> Vec<CatalogRef> {
 /// Every catalog of the installed addons that can be browsed without typing anything, in
 /// addon order. Home shows those without a required genre; the type pages show all of them.
 pub fn browsable_catalogs(collection: &[Value]) -> Vec<CatalogRef> {
-    collection.iter().flat_map(catalog_refs).collect()
+    collection
+        .iter()
+        .flat_map(|d| catalog_refs(d, Purpose::Browse))
+        .collect()
+}
+
+/// Every catalog of the installed addons that accepts a search term, in addon order.
+pub fn search_catalogs(collection: &[Value]) -> Vec<CatalogRef> {
+    collection
+        .iter()
+        .flat_map(|d| catalog_refs(d, Purpose::Search))
+        .collect()
 }
 
 /// Whether the collection already contains an addon with catalogs.
@@ -312,6 +346,37 @@ mod tests {
         );
         // A catalog without a name is labelled with its id.
         assert_eq!(rows[1].name, "top");
+    }
+
+    #[test]
+    fn lists_search_catalogs() {
+        let mut addons = collection();
+        addons.push(json!({
+            "transportUrl": "https://legacy.example/manifest.json",
+            "manifest": {
+                "id": "legacy", "name": "Legacy", "version": "1",
+                "resources": ["catalog"], "types": ["movie"],
+                "catalogs": [
+                    {"type": "movie", "id": "find", "extraSupported": ["search", "skip"]},
+                    {"type": "movie", "id": "picky", "extra": [
+                        {"name": "search", "isRequired": true},
+                        {"name": "region", "isRequired": true}]}
+                ]
+            }
+        }));
+        let catalogs = search_catalogs(&addons);
+        let found: Vec<(&str, &str)> = catalogs
+            .iter()
+            .map(|c| (c.addon_name.as_str(), c.id.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("Cinemeta", "search"),
+                ("Anime", "legacy"),
+                ("Legacy", "find")
+            ]
+        );
     }
 
     #[test]

@@ -193,6 +193,22 @@ async fn catalogs_list(state: tauri::State<'_, AppState>) -> Result<Vec<CatalogR
     Ok(catalog::browsable_catalogs(&sources))
 }
 
+/// Catalogs that accept a search term, from the installed addons or Cinemeta.
+#[tauri::command]
+async fn search_catalogs(state: tauri::State<'_, AppState>) -> Result<Vec<CatalogRef>, String> {
+    let key = state.auth_key()?;
+    let mut sources = state.addon_collection(&key).await?;
+    if catalog::search_catalogs(&sources).is_empty() {
+        let manifest = state
+            .api
+            .fetch_manifest(CINEMETA_URL)
+            .await
+            .map_err(|e| e.to_string())?;
+        sources.insert(0, addons::builtin_descriptor(CINEMETA_URL, manifest));
+    }
+    Ok(catalog::search_catalogs(&sources))
+}
+
 /// Fetches one page of a catalog from an installed addon.
 #[tauri::command]
 async fn catalog_fetch(
@@ -276,6 +292,7 @@ pub fn run() {
             addons_configure,
             catalogs_list,
             catalog_fetch,
+            search_catalogs,
             meta_details
         ])
         .run(tauri::generate_context!())

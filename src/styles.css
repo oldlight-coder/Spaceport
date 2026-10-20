@@ -448,3 +448,28 @@ select {
   font-size: 13px;
   line-height: 1.4;
 }
+
+.search-form {
+  flex: 0 1 240px;
+  min-width: 120px;
+}
+
+.search-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+}
+
+.topbar button {
+  white-space: nowrap;
+}
+
+.topbar .user-email {
+  white-space: nowrap;
+}
+
+@media (max-width: 1240px) {
+  .topbar .user-email {
+    display: none;
+  }
+}

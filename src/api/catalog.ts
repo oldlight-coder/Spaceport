@@ -21,6 +21,8 @@ export interface MetaPreview {
 
 export const listCatalogs = () => invoke<CatalogRef[]>("catalogs_list");
 
+export const searchCatalogs = () => invoke<CatalogRef[]>("search_catalogs");
+
 export const fetchCatalog = (catalog: CatalogRef, extra: [string, string][] = []) =>
   invoke<MetaPreview[]>("catalog_fetch", {
     transportUrl: catalog.transportUrl,

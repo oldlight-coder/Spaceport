@@ -15,7 +15,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Home rows from addon catalogs (Cinemeta by default)
 - [x] Movies / Series / Anime pages with genre filter and infinite scroll
 - [x] Details page: poster, backdrop, description, cast, seasons, episodes
-- [ ] Search across all addon catalogs
+- [x] Search across all addon catalogs
 - **Acceptance:** installing an addon by URL shows its catalogs on Home; opening a series shows
   every season and episode; search returns results from more than one addon.
 
@@ -86,4 +86,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-20: M2 details page: meta from the first addon declaring `meta` for the type/id prefix
   (source addon first, Cinemeta fallback); cast/directors/genres from links or legacy fields;
   episodes grouped by season with specials last. (d9858e7)
-- 2026-10-20: Details page remembers the last opened season per title (owner request).
+- 2026-10-20: Details page remembers the last opened season per title (owner request). (47a13a2)
+- 2026-10-20: M2 search: top-bar search queries every catalog that accepts `search` (current and
+  legacy manifest forms) in parallel, one row per catalog, empty rows hidden. M2 code complete.
