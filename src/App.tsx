@@ -1,19 +1,41 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useState } from "react";
+import { restoreSession, Session } from "./api/auth";
+import LoginScreen from "./screens/LoginScreen";
+import HomeScreen from "./screens/HomeScreen";
+
+type View = { kind: "loading" } | { kind: "error"; message: string } | { kind: "session"; session: Session };
 
 export default function App() {
-  const [version, setVersion] = useState<string | null>(null);
+  const [view, setView] = useState<View>({ kind: "loading" });
 
-  useEffect(() => {
-    invoke<string>("app_version")
-      .then(setVersion)
-      .catch(() => setVersion(null));
+  const restore = useCallback(() => {
+    setView({ kind: "loading" });
+    restoreSession()
+      .then((session) => setView({ kind: "session", session }))
+      .catch((e) => setView({ kind: "error", message: String(e) }));
   }, []);
 
-  return (
-    <main className="shell">
-      <h1>Spaceport</h1>
-      <p className="muted">{version ? `v${version}` : "Desktop Stremio client"}</p>
-    </main>
-  );
+  useEffect(restore, [restore]);
+
+  const onSession = (session: Session) => setView({ kind: "session", session });
+
+  switch (view.kind) {
+    case "loading":
+      return <main className="center muted">Loading…</main>;
+    case "error":
+      return (
+        <main className="center">
+          <div className="card">
+            <p className="error">{view.message}</p>
+            <button onClick={restore}>Retry</button>
+          </div>
+        </main>
+      );
+    case "session":
+      return view.session.state === "loggedIn" ? (
+        <HomeScreen user={view.session.user} onSession={onSession} />
+      ) : (
+        <LoginScreen onSession={onSession} />
+      );
+  }
 }

@@ -1,0 +1,195 @@
+//! Minimal client for Stremio's public account API (`api.strem.io`).
+//!
+//! Every call is a POST to `{base}/api/{method}` with a JSON body that carries a `type` field.
+//! Responses are wrapped as `{"result": ...}` on success or `{"error": {...}}` on failure.
+
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+pub const DEFAULT_BASE_URL: &str = "https://api.strem.io";
+
+#[derive(Debug, thiserror::Error)]
+pub enum ApiError {
+    /// The request never got a usable answer (offline, DNS, TLS, timeout, bad HTTP status).
+    #[error("could not reach Stremio: {0}")]
+    Transport(String),
+    /// Stremio answered with an error object, e.g. wrong password or expired session.
+    #[error("{message}")]
+    Stremio { code: i64, message: String },
+    /// Stremio answered with something we could not parse.
+    #[error("unexpected response from Stremio: {0}")]
+    InvalidResponse(String),
+}
+
+/// The account fields Spaceport uses. Stremio returns more; the rest are ignored.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct User {
+    #[serde(rename = "_id")]
+    pub id: String,
+    pub email: String,
+}
+
+/// Result of a successful login. Not `Debug` so the auth key cannot end up in logs.
+#[derive(Deserialize)]
+pub struct LoginResult {
+    #[serde(rename = "authKey")]
+    pub auth_key: String,
+    pub user: User,
+}
+
+#[derive(Deserialize)]
+struct ErrorBody {
+    #[serde(default)]
+    code: i64,
+    #[serde(default)]
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct Envelope<T> {
+    result: Option<T>,
+    error: Option<ErrorBody>,
+}
+
+/// Turns a raw response body into the `result` value or an `ApiError`.
+fn parse_envelope<T: DeserializeOwned>(body: &str) -> Result<T, ApiError> {
+    let envelope: Envelope<T> =
+        serde_json::from_str(body).map_err(|e| ApiError::InvalidResponse(e.to_string()))?;
+    if let Some(error) = envelope.error {
+        let message = if error.message.is_empty() {
+            "Stremio returned an error".to_string()
+        } else {
+            error.message
+        };
+        return Err(ApiError::Stremio {
+            code: error.code,
+            message,
+        });
+    }
+    envelope
+        .result
+        .ok_or_else(|| ApiError::InvalidResponse("missing result".to_string()))
+}
+
+#[derive(Clone)]
+pub struct StremioApi {
+    http: reqwest::Client,
+    base_url: String,
+}
+
+impl StremioApi {
+    pub fn new(base_url: impl Into<String>) -> Self {
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .expect("failed to build HTTP client");
+        Self {
+            http,
+            base_url: base_url.into().trim_end_matches('/').to_string(),
+        }
+    }
+
+    async fn call<T: DeserializeOwned>(&self, method: &str, body: Value) -> Result<T, ApiError> {
+        let url = format!("{}/api/{}", self.base_url, method);
+        let response = self
+            .http
+            .post(url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+        let status = response.status();
+        let text = response
+            .text()
+            .await
+            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+        // Stremio reports API errors in the body, sometimes with a non-2xx status, so try the
+        // body first and only fall back to the status when it is not a valid envelope.
+        match parse_envelope(&text) {
+            Err(ApiError::InvalidResponse(_)) if !status.is_success() => {
+                Err(ApiError::Transport(format!("HTTP {status}")))
+            }
+            other => other,
+        }
+    }
+
+    pub async fn login(&self, email: &str, password: &str) -> Result<LoginResult, ApiError> {
+        self.call(
+            "login",
+            json!({ "type": "Login", "email": email, "password": password, "facebook": false }),
+        )
+        .await
+    }
+
+    pub async fn logout(&self, auth_key: &str) -> Result<(), ApiError> {
+        let _: Value = self
+            .call("logout", json!({ "type": "Logout", "authKey": auth_key }))
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_user(&self, auth_key: &str) -> Result<User, ApiError> {
+        self.call("getUser", json!({ "type": "GetUser", "authKey": auth_key }))
+            .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_result() {
+        let user: User =
+            parse_envelope(r#"{"result":{"_id":"u1","email":"a@b.c","fullname":""}}"#).unwrap();
+        assert_eq!(
+            user,
+            User {
+                id: "u1".into(),
+                email: "a@b.c".into()
+            }
+        );
+    }
+
+    #[test]
+    fn parses_error() {
+        let err = parse_envelope::<User>(r#"{"error":{"message":"Wrong password","code":3}}"#)
+            .err()
+            .unwrap();
+        match err {
+            ApiError::Stremio { code, message } => {
+                assert_eq!(code, 3);
+                assert_eq!(message, "Wrong password");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn error_without_message_gets_default_text() {
+        let err = parse_envelope::<User>(r#"{"error":{}}"#).err().unwrap();
+        assert_eq!(err.to_string(), "Stremio returned an error");
+    }
+
+    #[test]
+    fn rejects_garbage_and_empty_envelope() {
+        assert!(matches!(
+            parse_envelope::<User>("<html>"),
+            Err(ApiError::InvalidResponse(_))
+        ));
+        assert!(matches!(
+            parse_envelope::<User>("{}"),
+            Err(ApiError::InvalidResponse(_))
+        ));
+    }
+
+    #[test]
+    fn parses_login_result() {
+        let r: LoginResult =
+            parse_envelope(r#"{"result":{"authKey":"k","user":{"_id":"u1","email":"a@b.c"}}}"#)
+                .unwrap();
+        assert_eq!(r.auth_key, "k");
+        assert_eq!(r.user.email, "a@b.c");
+    }
+}

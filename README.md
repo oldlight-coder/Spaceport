@@ -27,3 +27,6 @@ pnpm typecheck                                       # tsc --noEmit
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml
 ```
+
+The Stremio auth key is stored in the Windows Credential Manager (entry `Spaceport`). On
+non-Windows dev builds an in-memory store is used, so sign-in does not survive a restart there.
