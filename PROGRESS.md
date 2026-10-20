@@ -85,4 +85,5 @@ pass on Windows. The owner tests each milestone before the next one starts.
   extras (new and legacy forms), infinite scroll with `skip`, stops on empty or repeated page. (03e7ea2) Owner confirmed it works.
 - 2026-10-20: M2 details page: meta from the first addon declaring `meta` for the type/id prefix
   (source addon first, Cinemeta fallback); cast/directors/genres from links or legacy fields;
-  episodes grouped by season with specials last.
+  episodes grouped by season with specials last. (d9858e7)
+- 2026-10-20: Details page remembers the last opened season per title (owner request).

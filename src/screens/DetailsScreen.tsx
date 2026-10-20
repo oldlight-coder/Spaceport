@@ -88,16 +88,41 @@ function Details({ meta }: { meta: MetaDetails }) {
 
 const seasonLabel = (n: number) => (n === 0 ? "Specials" : `Season ${n}`);
 
+// The last season opened per title is kept locally so returning to a title shows it again.
+const seasonKey = (id: string) => `spaceport.season.${id}`;
+
+function readSeason(id: string): number | null {
+  try {
+    const value = localStorage.getItem(seasonKey(id));
+    return value === null ? null : Number(value);
+  } catch {
+    return null;
+  }
+}
+
+function saveSeason(id: string, season: number) {
+  try {
+    localStorage.setItem(seasonKey(id), String(season));
+  } catch {
+    // Storage can be unavailable; the choice then only lasts for this view.
+  }
+}
+
 function Seasons({ meta }: { meta: MetaDetails }) {
-  const [selected, setSelected] = useState(meta.seasons[0].number);
+  const [selected, setSelected] = useState(() => readSeason(meta.id) ?? meta.seasons[0].number);
   const season = meta.seasons.find((s) => s.number === selected) ?? meta.seasons[0];
+
+  function select(number: number) {
+    setSelected(number);
+    saveSeason(meta.id, number);
+  }
   return (
     <section>
       <div className="season-head">
         <h2>Episodes</h2>
         <select
           value={season.number}
-          onChange={(e) => setSelected(Number(e.target.value))}
+          onChange={(e) => select(Number(e.target.value))}
           aria-label="Season"
         >
           {meta.seasons.map((s) => (
