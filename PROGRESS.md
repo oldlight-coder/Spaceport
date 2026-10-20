@@ -119,3 +119,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
   loaded at runtime from the bundled libmpv-2.dll and draws into a child window over the web
   view with hwdec=auto-safe; mpv's own controls until our controls item. `pnpm run setup` pins
   and verifies the shinchiro build (scripts/libmpv.json).
+- 2026-10-20: First Windows run failed to load libmpv-2.dll (LoadLibraryExW). Pinned build's imports
+  checked: all are Windows system DLLs except vulkan-1.dll (installed by GPU drivers). Load errors
+  now give the path, the Windows reason and name a missing Vulkan runtime; libmpv's folder is
+  searched for its dependencies.

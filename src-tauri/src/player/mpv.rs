@@ -82,9 +82,19 @@ pub struct MpvLib {
 impl MpvLib {
     /// Loads libmpv from `path`. The file is the one bundled at build time, never downloaded.
     pub fn load(path: &Path) -> Result<Arc<Self>, String> {
-        // SAFETY: loading libmpv runs its initialisers, which have no special requirements.
-        let lib = unsafe { Library::new(path) }
-            .map_err(|e| format!("could not load the player library: {e}"))?;
+        if !path.is_file() {
+            return Err(format!(
+                "the player library is missing: {} (run `pnpm run setup`)",
+                path.display()
+            ));
+        }
+        let lib = open_library(path).map_err(|e| {
+            format!(
+                "could not load the player library {}: {}",
+                path.display(),
+                load_error_text(&e)
+            )
+        })?;
         macro_rules! sym {
             ($name:literal) => {
                 // SAFETY: the type matches the declaration in mpv's client.h.
@@ -111,6 +121,68 @@ impl MpvLib {
             .to_string_lossy()
             .into_owned()
     }
+}
+
+#[cfg(windows)]
+fn open_library(path: &Path) -> Result<Library, libloading::Error> {
+    use libloading::os::windows::{
+        Library as WindowsLibrary, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
+    };
+    // Also look for libmpv's own dependencies next to it, not only in the system folders.
+    // SAFETY: loading libmpv runs its initialisers, which have no special requirements.
+    unsafe {
+        WindowsLibrary::load_with_flags(
+            path,
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+        )
+    }
+    .map(Library::from)
+}
+
+#[cfg(not(windows))]
+fn open_library(path: &Path) -> Result<Library, libloading::Error> {
+    // SAFETY: as above.
+    unsafe { Library::new(path) }
+}
+
+/// The OS reason behind a load failure, with a hint for the common Windows codes.
+fn load_error_text(error: &libloading::Error) -> String {
+    use std::error::Error;
+    let reason = error
+        .source()
+        .map(|source| source.to_string())
+        .unwrap_or_else(|| error.to_string());
+    let hint = if reason.contains("os error 126") {
+        missing_dependency_hint()
+    } else if reason.contains("os error 193") {
+        " The file is damaged or not a 64-bit Windows DLL."
+    } else {
+        ""
+    };
+    format!("{reason}.{hint}")
+}
+
+/// libmpv's imports are all part of Windows except the Vulkan loader, which graphics drivers
+/// install. When loading fails for a missing module, check whether that is the one.
+#[cfg(windows)]
+fn missing_dependency_hint() -> &'static str {
+    use libloading::os::windows::{Library as WindowsLibrary, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS};
+    // SAFETY: the Vulkan loader has no special initialisation requirements; it is unloaded again.
+    let vulkan = unsafe {
+        WindowsLibrary::load_with_flags("vulkan-1.dll", LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)
+    };
+    if vulkan.is_err() {
+        " Windows has no Vulkan runtime (vulkan-1.dll), which libmpv needs. Install or update \
+         your graphics driver, which includes it, then try again."
+    } else {
+        " A DLL that libmpv needs is missing."
+    }
+}
+
+#[cfg(not(windows))]
+fn missing_dependency_hint() -> &'static str {
+    " A library that libmpv needs is missing."
 }
 
 fn cstring(value: &str) -> Result<CString, String> {
