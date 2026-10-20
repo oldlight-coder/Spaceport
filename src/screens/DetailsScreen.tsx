@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Episode, getMeta, MetaDetails } from "../api/meta";
 import { useLoad } from "../components/Loadable";
+import StreamsPanel from "../components/StreamsPanel";
 import { TitleRef } from "../navigation";
 
 interface Props {
@@ -31,7 +32,22 @@ export default function DetailsScreen({ title, onBack }: Props) {
   );
 }
 
+/** The video whose streams are shown in the side panel. */
+interface StreamTarget {
+  videoId: string;
+  heading: string;
+}
+
 function Details({ meta }: { meta: MetaDetails }) {
+  const [target, setTarget] = useState<StreamTarget | null>(null);
+  const openEpisode = (ep: Episode) =>
+    setTarget({
+      videoId: ep.id,
+      heading:
+        ep.season != null && ep.episode != null
+          ? `S${ep.season} E${ep.episode} · ${ep.title}`
+          : ep.title,
+    });
   const facts = [meta.releaseInfo, meta.runtime, meta.imdbRating && `IMDb ${meta.imdbRating}`].filter(
     Boolean,
   );
@@ -60,6 +76,13 @@ function Details({ meta }: { meta: MetaDetails }) {
               </ul>
             )}
             {meta.description && <p className="description">{meta.description}</p>}
+            {meta.seasons.length === 0 && meta.videos.length === 0 && (
+              <div>
+                <button onClick={() => setTarget({ videoId: meta.id, heading: meta.name })}>
+                  Streams
+                </button>
+              </div>
+            )}
             {meta.directors.length > 0 && (
               <p>
                 <span className="muted">Director </span>
@@ -75,12 +98,21 @@ function Details({ meta }: { meta: MetaDetails }) {
           </div>
         </div>
       </header>
-      {meta.seasons.length > 0 && <Seasons meta={meta} />}
+      {meta.seasons.length > 0 && <Seasons meta={meta} onOpen={openEpisode} />}
       {meta.videos.length > 0 && (
         <section>
           <h2>Videos</h2>
-          <EpisodeList episodes={meta.videos} />
+          <EpisodeList episodes={meta.videos} onOpen={openEpisode} />
         </section>
+      )}
+      {target && (
+        <StreamsPanel
+          key={target.videoId}
+          type={meta.type}
+          videoId={target.videoId}
+          heading={target.heading}
+          onClose={() => setTarget(null)}
+        />
       )}
     </>
   );
@@ -108,7 +140,7 @@ function saveSeason(id: string, season: number) {
   }
 }
 
-function Seasons({ meta }: { meta: MetaDetails }) {
+function Seasons({ meta, onOpen }: { meta: MetaDetails; onOpen: (ep: Episode) => void }) {
   const [selected, setSelected] = useState(() => readSeason(meta.id) ?? meta.seasons[0].number);
   const season = meta.seasons.find((s) => s.number === selected) ?? meta.seasons[0];
 
@@ -132,7 +164,7 @@ function Seasons({ meta }: { meta: MetaDetails }) {
           ))}
         </select>
       </div>
-      <EpisodeList episodes={season.episodes} />
+      <EpisodeList episodes={season.episodes} onOpen={onOpen} />
     </section>
   );
 }
@@ -143,24 +175,31 @@ function formatDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 }
 
-function EpisodeList({ episodes }: { episodes: Episode[] }) {
+interface EpisodeListProps {
+  episodes: Episode[];
+  onOpen: (ep: Episode) => void;
+}
+
+function EpisodeList({ episodes, onOpen }: EpisodeListProps) {
   return (
     <ol className="episodes">
       {episodes.map((ep) => (
-        <li key={ep.id} className="episode">
-          {ep.thumbnail ? (
-            <img src={ep.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" />
-          ) : (
-            <div className="episode-thumb" />
-          )}
-          <div>
-            <strong>
-              {ep.episode != null && `${ep.episode}. `}
-              {ep.title}
-            </strong>
-            {ep.released && <span className="muted"> · {formatDate(ep.released)}</span>}
-            {ep.overview && <p className="muted">{ep.overview}</p>}
-          </div>
+        <li key={ep.id}>
+          <button className="episode" onClick={() => onOpen(ep)}>
+            {ep.thumbnail ? (
+              <img src={ep.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="episode-thumb" />
+            )}
+            <div>
+              <strong>
+                {ep.episode != null && `${ep.episode}. `}
+                {ep.title}
+              </strong>
+              {ep.released && <span className="muted"> · {formatDate(ep.released)}</span>}
+              {ep.overview && <p className="muted">{ep.overview}</p>}
+            </div>
+          </button>
         </li>
       ))}
     </ol>

@@ -427,6 +427,10 @@ select {
 .episode {
   display: flex;
   gap: 16px;
+  width: 100%;
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
   padding: 10px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -472,4 +476,82 @@ select {
   .topbar .user-email {
     display: none;
   }
+}
+
+.episode:hover,
+.episode:focus-visible {
+  border-color: var(--accent);
+}
+
+.streams-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(520px, 100vw);
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.4);
+}
+
+.streams-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.streams-head h2 {
+  margin: 0;
+}
+
+.addon-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.stream-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stream {
+  padding: 10px 12px;
+  background: #0f1115;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.stream-name {
+  font-weight: 600;
+  white-space: pre-line;
+}
+
+.stream-title {
+  margin: 6px 0 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.stream-name .badge {
+  margin-left: 0;
 }

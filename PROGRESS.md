@@ -20,7 +20,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
   every season and episode; search returns results from more than one addon.
 
 ## M3. Stream collection and ranking
-- [ ] Query all addons' `stream` resource in parallel with per-addon timeout
+- [x] Query all addons' `stream` resource in parallel with per-addon timeout
 - [ ] Parser for resolution, HDR/DV, codec, audio, size, seeders, release group, cached flag
 - [ ] Scoring rules (seeders, quality, size, language, cached) with unit tests
 - [ ] User filters: max size, min quality, blocked codecs, preferred languages
@@ -88,4 +88,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   episodes grouped by season with specials last. (d9858e7)
 - 2026-10-20: Details page remembers the last opened season per title (owner request). (47a13a2)
 - 2026-10-20: M2 search: top-bar search queries every catalog that accepts `search` (current and
-  legacy manifest forms) in parallel, one row per catalog, empty rows hidden. M2 code complete.
+  legacy manifest forms) in parallel, one row per catalog, empty rows hidden. M2 code complete. (083a9b1)
+- 2026-10-20: M2 accepted by owner on Windows (addon catalogs on Home, all seasons/episodes, search
+  results from more than one addon).
+- 2026-10-20: M3 stream collection: every addon declaring `stream` for the type/id is asked at once
+  (15 s per addon); per-addon outcome shown; streams panel opens from an episode or a movie.

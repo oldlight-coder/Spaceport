@@ -13,6 +13,7 @@ use stremio::api::{StremioApi, ADDON_TIMEOUT, DEFAULT_BASE_URL};
 use stremio::catalog::{self, CatalogRef, MetaPreview, CINEMETA_URL};
 use stremio::library::{visible_items, LibraryItem};
 use stremio::meta::{self, MetaDetails};
+use stremio::streams::{self, StreamResults, STREAM_TIMEOUT};
 
 struct AppState {
     api: StremioApi,
@@ -256,6 +257,31 @@ async fn meta_details(
     Err(last_error)
 }
 
+/// Streams for one video (a movie id or an episode's video id) from every addon that declares
+/// `stream` for it, all asked at once with a per-addon timeout.
+#[tauri::command]
+async fn streams_fetch(
+    state: tauri::State<'_, AppState>,
+    kind: String,
+    video_id: String,
+) -> Result<StreamResults, String> {
+    let sources = state.sources().await?;
+    let urls = addons::resource_sources(&sources, "stream", &kind, &video_id, None);
+    let views = addons::addon_views(&sources);
+    let targets = urls
+        .into_iter()
+        .map(|url| {
+            let name = views
+                .iter()
+                .find(|a| a.transport_url == url)
+                .map(|a| a.name.clone())
+                .unwrap_or_else(|| url.clone());
+            (name, url)
+        })
+        .collect();
+    Ok(streams::fetch_streams(&state.api, targets, &kind, &video_id, STREAM_TIMEOUT).await)
+}
+
 /// Opens an addon's configure page in the default browser.
 #[tauri::command]
 async fn addons_configure(
@@ -293,7 +319,8 @@ pub fn run() {
             catalogs_list,
             catalog_fetch,
             search_catalogs,
-            meta_details
+            meta_details,
+            streams_fetch
         ])
         .run(tauri::generate_context!())
         .expect("error while running Spaceport");
