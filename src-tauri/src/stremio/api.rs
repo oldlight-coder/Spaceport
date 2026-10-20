@@ -1,11 +1,15 @@
 //! Minimal client for Stremio's public account API (`api.strem.io`).
 //!
-//! Every call is a POST to `{base}/api/{method}` with a JSON body that carries a `type` field.
+//! Every call is a POST to `{base}/api/{method}` with a JSON body. Account calls carry a `type`
+//! field; datastore calls name a `collection` instead.
 //! Responses are wrapped as `{"result": ...}` on success or `{"error": {...}}` on failure.
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+
+use super::addons::{AddonCollection, RawAddon};
+use super::library::RawLibraryItem;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.strem.io";
 
@@ -132,6 +136,26 @@ impl StremioApi {
     pub async fn get_user(&self, auth_key: &str) -> Result<User, ApiError> {
         self.call("getUser", json!({ "type": "GetUser", "authKey": auth_key }))
             .await
+    }
+
+    /// Installed addons in the user's order.
+    pub async fn addon_collection(&self, auth_key: &str) -> Result<Vec<RawAddon>, ApiError> {
+        let collection: AddonCollection = self
+            .call(
+                "addonCollectionGet",
+                json!({ "type": "AddonCollectionGet", "authKey": auth_key, "update": true }),
+            )
+            .await?;
+        Ok(collection.addons)
+    }
+
+    /// Every entry of the library datastore, including removed and temporary ones.
+    pub async fn library_items(&self, auth_key: &str) -> Result<Vec<RawLibraryItem>, ApiError> {
+        self.call(
+            "datastoreGet",
+            json!({ "authKey": auth_key, "collection": "libraryItem", "ids": [], "all": true }),
+        )
+        .await
     }
 }
 

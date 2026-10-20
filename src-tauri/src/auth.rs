@@ -13,6 +13,8 @@ pub enum AuthError {
     Api(#[from] ApiError),
     #[error(transparent)]
     Secret(#[from] SecretError),
+    #[error("not signed in")]
+    NotSignedIn,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -47,6 +49,11 @@ pub async fn restore(api: &StremioApi, store: &dyn SecretStore) -> Result<Sessio
         }
         Err(e) => Err(e.into()),
     }
+}
+
+/// The saved auth key, for calls that need a signed-in user.
+pub fn auth_key(store: &dyn SecretStore) -> Result<String, AuthError> {
+    store.get(AUTH_KEY_NAME)?.ok_or(AuthError::NotSignedIn)
 }
 
 /// Ends the session on Stremio when possible and always forgets the local key.
@@ -162,6 +169,14 @@ mod tests {
             Err(AuthError::Api(ApiError::Transport(_)))
         ));
         assert_eq!(store.get(AUTH_KEY_NAME).unwrap().as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn auth_key_requires_sign_in() {
+        let store = MemoryStore::default();
+        assert!(matches!(auth_key(&store), Err(AuthError::NotSignedIn)));
+        store.set(AUTH_KEY_NAME, "secret").unwrap();
+        assert_eq!(auth_key(&store).unwrap(), "secret");
     }
 
     #[tokio::test]

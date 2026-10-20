@@ -6,7 +6,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 ## M1. App shell and Stremio login
 - [x] Tauri 2 + React + TypeScript project named Spaceport, builds an NSIS installer
 - [x] Stremio login (email/password) and logout; auth key stored in Windows Credential Manager
-- [ ] Read the user's library and installed addons from Stremio
+- [x] Read the user's library and installed addons from Stremio
 - **Acceptance:** installer runs; app opens to a login screen; after login the library titles are
   listed; restarting the app keeps you logged in.
 
@@ -71,4 +71,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-20: M1 project scaffold (Tauri 2 + React + TS, NSIS target). Typecheck, cargo test,
   clippy and a release build pass on Linux; NSIS installer still to be built and checked on Windows. (9e88864)
 - 2026-10-20: M1 Stremio login/logout; auth key in Windows Credential Manager via keyring,
-  session restored on start. Unit tests use a mock API; live api.strem.io untested (blocked here).
+  session restored on start. Unit tests use a mock API; live api.strem.io untested (blocked here). (4e1f13e)
+- 2026-10-20: M1 library (datastoreGet, removed/temp hidden) and installed addons
+  (addonCollectionGet) shown after login. M1 code complete; awaiting owner acceptance on Windows.
