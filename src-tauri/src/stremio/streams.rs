@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use super::api::StremioApi;
 use super::catalog::resource_url;
+use crate::ranking::parse::{parse, ParsedStream};
 
 /// Time limit for each addon's stream answer. Addons that take longer are reported as timed out
 /// and the others are still shown.
@@ -37,6 +38,8 @@ pub struct Stream {
     pub video_size: Option<u64>,
     pub binge_group: Option<String>,
     pub not_web_ready: bool,
+    /// Quality details read from the labels.
+    pub parsed: ParsedStream,
 }
 
 /// How one addon answered a stream request.
@@ -76,12 +79,24 @@ fn parse_stream(value: &Value, addon_name: &str, transport_url: &str) -> Option<
     if url.is_none() && info_hash.is_none() && yt_id.is_none() && external_url.is_none() {
         return None;
     }
+    let name = text(value, "name");
+    // `description` is the newer name for `title`.
+    let title = text(value, "description").or_else(|| text(value, "title"));
+    let filename = hint_text("filename");
+    let video_size = hints
+        .and_then(|h| h.get("videoSize"))
+        .and_then(Value::as_u64);
+    let parsed = parse(
+        name.as_deref(),
+        title.as_deref(),
+        filename.as_deref(),
+        video_size,
+    );
     Some(Stream {
         addon_name: addon_name.to_string(),
         transport_url: transport_url.to_string(),
-        name: text(value, "name"),
-        // `description` is the newer name for `title`.
-        title: text(value, "description").or_else(|| text(value, "title")),
+        name,
+        title,
         url,
         info_hash,
         file_idx: value
@@ -109,6 +124,7 @@ fn parse_stream(value: &Value, addon_name: &str, transport_url: &str) -> Option<
             .and_then(|h| h.get("notWebReady"))
             .and_then(Value::as_bool)
             .unwrap_or(false),
+        parsed,
     })
 }
 

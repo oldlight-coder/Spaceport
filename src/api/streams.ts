@@ -1,5 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface ParsedStream {
+  resolution: number | null;
+  hdr: string[];
+  codec: string | null;
+  bitDepth: number | null;
+  audio: string[];
+  channels: string | null;
+  sizeBytes: number | null;
+  seeders: number | null;
+  releaseGroup: string | null;
+  source: string | null;
+  cached: boolean | null;
+  debrid: string | null;
+  languages: string[];
+  multiAudio: boolean;
+}
+
 export interface Stream {
   addonName: string;
   transportUrl: string;
@@ -15,6 +32,7 @@ export interface Stream {
   videoSize: number | null;
   bingeGroup: string | null;
   notWebReady: boolean;
+  parsed: ParsedStream;
 }
 
 export interface AddonOutcome {

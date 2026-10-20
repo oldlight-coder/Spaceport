@@ -1,4 +1,5 @@
 mod auth;
+mod ranking;
 mod secrets;
 mod stremio;
 

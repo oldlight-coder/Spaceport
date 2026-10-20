@@ -555,3 +555,30 @@ select {
 .stream-name .badge {
   margin-left: 0;
 }
+
+.stream-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stream-tags li {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #23284a;
+  color: #c7ceff;
+  font-size: 12px;
+}
+
+.stream-tags li.good {
+  background: #173a2a;
+  color: #8ee6b4;
+}
+
+.stream-tags li.warn {
+  background: #3d2323;
+  color: var(--danger);
+}

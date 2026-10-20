@@ -21,7 +21,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 
 ## M3. Stream collection and ranking
 - [x] Query all addons' `stream` resource in parallel with per-addon timeout
-- [ ] Parser for resolution, HDR/DV, codec, audio, size, seeders, release group, cached flag
+- [x] Parser for resolution, HDR/DV, codec, audio, size, seeders, release group, cached flag
 - [ ] Scoring rules (seeders, quality, size, language, cached) with unit tests
 - [ ] User filters: max size, min quality, blocked codecs, preferred languages
 - [ ] Manual picker with the ranked list
@@ -92,4 +92,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-20: M2 accepted by owner on Windows (addon catalogs on Home, all seasons/episodes, search
   results from more than one addon).
 - 2026-10-20: M3 stream collection: every addon declaring `stream` for the type/id is asked at once
-  (15 s per addon); per-addon outcome shown; streams panel opens from an episode or a movie.
+  (15 s per addon); per-addon outcome shown; streams panel opens from an episode or a movie. (9303070)
+- 2026-10-20: M3 stream parser (src-tauri/src/ranking/parse.rs): resolution, HDR/DV, codec, bit depth,
+  audio/channels, size, seeders, group, source, debrid cached flag, languages (incl. flag emoji).
+  36 tests over 39 titles; 8 are real Torrentio/TorBox results from the owner, the rest follow
+  common addon formats. Parsed tags shown in the streams panel.

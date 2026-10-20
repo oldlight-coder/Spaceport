@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { fetchStreams, Stream } from "../api/streams";
 import { useLoad } from "./Loadable";
+import StreamTags from "./StreamTags";
 
 interface Props {
   type: string;
@@ -62,6 +63,7 @@ export default function StreamsPanel({ type, videoId, heading, onClose }: Props)
                 <div className="stream-name">
                   <span className="badge">{streamKind(s)}</span> {s.name ?? s.addonName}
                 </div>
+                <StreamTags parsed={s.parsed} />
                 {s.title && <pre className="stream-title">{s.title}</pre>}
               </li>
             ))}
