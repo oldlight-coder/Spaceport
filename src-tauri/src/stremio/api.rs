@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::addons::{AddonCollection, RawAddon};
+use super::addons::AddonCollection;
 use super::library::RawLibraryItem;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.strem.io";
@@ -21,6 +21,9 @@ pub enum ApiError {
     /// Stremio answered with an error object, e.g. wrong password or expired session.
     #[error("{message}")]
     Stremio { code: i64, message: String },
+    /// An addon URL could not be loaded or did not return a manifest.
+    #[error("{0}")]
+    Addon(String),
     /// Stremio answered with something we could not parse.
     #[error("unexpected response from Stremio: {0}")]
     InvalidResponse(String),
@@ -139,7 +142,7 @@ impl StremioApi {
     }
 
     /// Installed addons in the user's order.
-    pub async fn addon_collection(&self, auth_key: &str) -> Result<Vec<RawAddon>, ApiError> {
+    pub async fn addon_collection(&self, auth_key: &str) -> Result<Vec<Value>, ApiError> {
         let collection: AddonCollection = self
             .call(
                 "addonCollectionGet",
@@ -147,6 +150,39 @@ impl StremioApi {
             )
             .await?;
         Ok(collection.addons)
+    }
+
+    /// Replaces the account's addon collection, which also sets the order.
+    pub async fn set_addon_collection(
+        &self,
+        auth_key: &str,
+        addons: &[Value],
+    ) -> Result<(), ApiError> {
+        let _: Value = self
+            .call(
+                "addonCollectionSet",
+                json!({ "type": "AddonCollectionSet", "authKey": auth_key, "addons": addons }),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Downloads an addon manifest from the URL the user entered.
+    pub async fn fetch_manifest(&self, url: &str) -> Result<Value, ApiError> {
+        let response = self
+            .http
+            .get(url)
+            .send()
+            .await
+            .and_then(|r| r.error_for_status())
+            // Configured addon URLs can embed tokens, so keep the URL out of the message.
+            .map_err(|e| {
+                ApiError::Addon(format!("could not load the addon: {}", e.without_url()))
+            })?;
+        response
+            .json()
+            .await
+            .map_err(|_| ApiError::Addon("the addon URL did not return a manifest".to_string()))
     }
 
     /// Every entry of the library datastore, including removed and temporary ones.

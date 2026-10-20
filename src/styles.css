@@ -104,7 +104,26 @@ button.secondary {
 
 .brand {
   font-weight: 700;
-  margin-right: auto;
+}
+
+.spacer {
+  margin-left: auto;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+button.tab {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+button.tab.active {
+  background: var(--surface);
+  color: inherit;
 }
 
 .content {
@@ -176,6 +195,9 @@ section + section {
 }
 
 .addon-list li {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   padding: 12px 16px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -194,4 +216,32 @@ section + section {
   background: #23284a;
   color: var(--accent);
   font-size: 11px;
+}
+
+.addon-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.addon-actions {
+  display: flex;
+  gap: 6px;
+}
+
+button.icon {
+  padding: 8px 12px;
+}
+
+.install-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.install-form input {
+  flex: 1;
+}
+
+section > .error {
+  margin-bottom: 16px;
 }

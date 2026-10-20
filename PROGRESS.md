@@ -11,7 +11,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
   listed; restarting the app keeps you logged in.
 
 ## M2. Addons and browsing
-- [ ] Addon list: install by manifest URL, remove, reorder, open configure page; synced to Stremio
+- [x] Addon list: install by manifest URL, remove, reorder, open configure page; synced to Stremio
 - [ ] Home rows from addon catalogs (Cinemeta by default)
 - [ ] Movies / Series / Anime pages with genre filter and infinite scroll
 - [ ] Details page: poster, backdrop, description, cast, seasons, episodes
@@ -73,4 +73,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-20: M1 Stremio login/logout; auth key in Windows Credential Manager via keyring,
   session restored on start. Unit tests use a mock API; live api.strem.io untested (blocked here). (4e1f13e)
 - 2026-10-20: M1 library (datastoreGet, removed/temp hidden) and installed addons
-  (addonCollectionGet) shown after login. M1 code complete; awaiting owner acceptance on Windows.
+  (addonCollectionGet) shown after login. M1 code complete. (07adee2)
+- 2026-10-20: M1 accepted by owner on Windows (installer, login, library, stays signed in).
+- 2026-10-20: M2 addon management: install by URL (stremio:// accepted, manifest validated),
+  remove (protected kept), reorder, configure page in browser; every change written back with
+  addonCollectionSet.
