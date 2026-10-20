@@ -13,7 +13,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 ## M2. Addons and browsing
 - [x] Addon list: install by manifest URL, remove, reorder, open configure page; synced to Stremio
 - [x] Home rows from addon catalogs (Cinemeta by default)
-- [ ] Movies / Series / Anime pages with genre filter and infinite scroll
+- [x] Movies / Series / Anime pages with genre filter and infinite scroll
 - [ ] Details page: poster, backdrop, description, cast, seasons, episodes
 - [ ] Search across all addon catalogs
 - **Acceptance:** installing an addon by URL shows its catalogs on Home; opening a series shows
@@ -80,4 +80,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   addonCollectionSet. (5c48b1f) Owner confirmed it works on Windows.
 - 2026-10-20: M2 Home rows: one row per browsable catalog (no required extras) of installed addons,
   Cinemeta used when none has catalogs; rows load in parallel with a 15 s per-addon timeout and
-  only installed addons (or Cinemeta) can be contacted.
+  only installed addons (or Cinemeta) can be contacted. (d2ce0da)
+- 2026-10-20: M2 Movies/Series/Anime pages: catalog picker per type, genre filter from catalog
+  extras (new and legacy forms), infinite scroll with `skip`, stops on empty or repeated page.

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { logout, Session, User } from "../api/auth";
 import AddonsScreen from "./AddonsScreen";
 import BoardScreen from "./BoardScreen";
+import DiscoverScreen from "./DiscoverScreen";
 import LibraryScreen from "./LibraryScreen";
 
 interface Props {
@@ -9,7 +10,14 @@ interface Props {
   onSession: (session: Session) => void;
 }
 
-const PAGES = { board: "Home", library: "Library", addons: "Addons" } as const;
+const PAGES = {
+  board: "Home",
+  movie: "Movies",
+  series: "Series",
+  anime: "Anime",
+  library: "Library",
+  addons: "Addons",
+} as const;
 type Page = keyof typeof PAGES;
 
 export default function HomeScreen({ user, onSession }: Props) {
@@ -47,6 +55,9 @@ export default function HomeScreen({ user, onSession }: Props) {
       </header>
       <main className="content">
         {page === "board" && <BoardScreen />}
+        {(page === "movie" || page === "series" || page === "anime") && (
+          <DiscoverScreen key={page} type={page} title={PAGES[page]} />
+        )}
         {page === "library" && <LibraryScreen />}
         {page === "addons" && <AddonsScreen />}
       </main>

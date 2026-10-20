@@ -23,6 +23,12 @@ pub struct CatalogRef {
     pub kind: String,
     pub id: String,
     pub name: String,
+    /// Genre filter values the catalog offers, in the addon's order.
+    pub genres: Vec<String>,
+    /// The catalog only answers when a genre is given; the first genre is the default.
+    pub genre_required: bool,
+    /// The catalog accepts `skip` for paging.
+    pub supports_skip: bool,
 }
 
 /// A title in a catalog response.
@@ -54,22 +60,62 @@ fn has_catalog_resource(manifest: &Value) -> bool {
         })
 }
 
-/// True when the catalog can be shown without user input. Catalogs that need a search term or
-/// another required extra (newer `extra[].isRequired` or older `extraRequired`) are skipped.
-fn needs_no_input(catalog: &Value) -> bool {
-    let required_extra = catalog
-        .get("extra")
+/// What a catalog accepts as extra properties, from the newer `extra: [{name, isRequired,
+/// options}]` form or the older `extraSupported` / `extraRequired` / `genres` fields.
+struct Extras {
+    genres: Vec<String>,
+    genre_required: bool,
+    supports_skip: bool,
+    /// Some required input other than a genre from a fixed list, such as a search term.
+    needs_input: bool,
+}
+
+fn string_list(value: Option<&Value>) -> Vec<String> {
+    value
         .and_then(Value::as_array)
-        .is_some_and(|extra| {
-            extra
+        .map(|items| {
+            items
                 .iter()
-                .any(|e| e.get("isRequired").and_then(Value::as_bool) == Some(true))
-        });
-    let legacy_required = catalog
-        .get("extraRequired")
-        .and_then(Value::as_array)
-        .is_some_and(|r| !r.is_empty());
-    !required_extra && !legacy_required
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extras(catalog: &Value) -> Extras {
+    let extra = catalog.get("extra").and_then(Value::as_array);
+    let named = |name: &str| {
+        extra
+            .into_iter()
+            .flatten()
+            .find(|e| e.get("name").and_then(Value::as_str) == Some(name))
+    };
+    let legacy_supported = string_list(catalog.get("extraSupported"));
+    let legacy_required = string_list(catalog.get("extraRequired"));
+
+    let mut genres = string_list(named("genre").and_then(|g| g.get("options")));
+    if genres.is_empty() {
+        genres = string_list(catalog.get("genres"));
+    }
+
+    let mut required: Vec<String> = extra
+        .into_iter()
+        .flatten()
+        .filter(|e| e.get("isRequired").and_then(Value::as_bool) == Some(true))
+        .filter_map(|e| e.get("name").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    required.extend(legacy_required);
+
+    let genre_required = required.iter().any(|r| r == "genre");
+    let needs_input = required.iter().any(|r| r != "genre" || genres.is_empty());
+
+    Extras {
+        supports_skip: named("skip").is_some() || legacy_supported.iter().any(|s| s == "skip"),
+        genres,
+        genre_required,
+        needs_input,
+    }
 }
 
 fn catalog_refs(descriptor: &Value) -> Vec<CatalogRef> {
@@ -86,8 +132,11 @@ fn catalog_refs(descriptor: &Value) -> Vec<CatalogRef> {
     catalogs
         .into_iter()
         .flatten()
-        .filter(|c| needs_no_input(c))
         .filter_map(|c| {
+            let extras = extras(c);
+            if extras.needs_input {
+                return None;
+            }
             let kind = c.get("type")?.as_str()?.to_string();
             let id = c.get("id")?.as_str()?.to_string();
             let name = c
@@ -102,19 +151,23 @@ fn catalog_refs(descriptor: &Value) -> Vec<CatalogRef> {
                 kind,
                 id,
                 name,
+                genres: extras.genres,
+                genre_required: extras.genre_required,
+                supports_skip: extras.supports_skip,
             })
         })
         .collect()
 }
 
-/// Home rows: every browsable catalog of the installed addons, in addon order.
-pub fn home_catalogs(collection: &[Value]) -> Vec<CatalogRef> {
+/// Every catalog of the installed addons that can be browsed without typing anything, in
+/// addon order. Home shows those without a required genre; the type pages show all of them.
+pub fn browsable_catalogs(collection: &[Value]) -> Vec<CatalogRef> {
     collection.iter().flat_map(catalog_refs).collect()
 }
 
 /// Whether the collection already contains an addon with catalogs.
 pub fn has_catalog_addon(collection: &[Value]) -> bool {
-    !home_catalogs(collection).is_empty()
+    !browsable_catalogs(collection).is_empty()
 }
 
 /// Percent-encodes everything except RFC 3986 unreserved characters.
@@ -204,7 +257,8 @@ mod tests {
                     "resources": ["catalog", "meta"], "types": ["movie", "series"],
                     "catalogs": [
                         {"type": "movie", "id": "top", "name": "Popular",
-                         "extra": [{"name": "genre"}, {"name": "skip"}]},
+                         "extra": [{"name": "genre", "options": ["Action", "Drama"]},
+                                   {"name": "skip"}]},
                         {"type": "movie", "id": "search", "name": "Search",
                          "extra": [{"name": "search", "isRequired": true}]},
                         {"type": "series", "id": "top"}
@@ -226,7 +280,13 @@ mod tests {
                     "resources": [{"name": "catalog", "types": ["anime"]}], "types": ["anime"],
                     "catalogs": [
                         {"type": "anime", "id": "trending", "name": "Trending"},
-                        {"type": "anime", "id": "legacy", "extraRequired": ["search"]}
+                        {"type": "anime", "id": "legacy", "extraRequired": ["search"]},
+                        {"type": "anime", "id": "old", "genres": ["Mecha"],
+                         "extraSupported": ["genre", "skip"]},
+                        {"type": "anime", "id": "by-genre", "extra": [
+                            {"name": "genre", "isRequired": true, "options": ["Isekai"]}]},
+                        {"type": "anime", "id": "free-genre", "extra": [
+                            {"name": "genre", "isRequired": true}]}
                     ]
                 }
             }),
@@ -235,7 +295,7 @@ mod tests {
 
     #[test]
     fn lists_browsable_catalogs_in_addon_order() {
-        let rows = home_catalogs(&collection());
+        let rows = browsable_catalogs(&collection());
         let ids: Vec<(&str, &str, &str)> = rows
             .iter()
             .map(|r| (r.addon_name.as_str(), r.kind.as_str(), r.id.as_str()))
@@ -246,10 +306,28 @@ mod tests {
                 ("Cinemeta", "movie", "top"),
                 ("Cinemeta", "series", "top"),
                 ("Anime", "anime", "trending"),
+                ("Anime", "anime", "old"),
+                ("Anime", "anime", "by-genre"),
             ]
         );
         // A catalog without a name is labelled with its id.
         assert_eq!(rows[1].name, "top");
+    }
+
+    #[test]
+    fn reads_genres_and_paging() {
+        let rows = browsable_catalogs(&collection());
+        let cinemeta = &rows[0];
+        assert_eq!(cinemeta.genres, ["Action", "Drama"]);
+        assert!(cinemeta.supports_skip && !cinemeta.genre_required);
+        let series = &rows[1];
+        assert!(series.genres.is_empty() && !series.supports_skip);
+        let legacy = &rows[3];
+        assert_eq!(legacy.genres, ["Mecha"]);
+        assert!(legacy.supports_skip);
+        let by_genre = &rows[4];
+        assert_eq!(by_genre.genres, ["Isekai"]);
+        assert!(by_genre.genre_required && !by_genre.supports_skip);
     }
 
     #[test]

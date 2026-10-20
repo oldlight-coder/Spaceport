@@ -6,6 +6,9 @@ export interface CatalogRef {
   type: string;
   id: string;
   name: string;
+  genres: string[];
+  genreRequired: boolean;
+  supportsSkip: boolean;
 }
 
 export interface MetaPreview {
@@ -16,7 +19,7 @@ export interface MetaPreview {
   posterShape: string | null;
 }
 
-export const homeCatalogs = () => invoke<CatalogRef[]>("home_catalogs");
+export const listCatalogs = () => invoke<CatalogRef[]>("catalogs_list");
 
 export const fetchCatalog = (catalog: CatalogRef, extra: [string, string][] = []) =>
   invoke<MetaPreview[]>("catalog_fetch", {

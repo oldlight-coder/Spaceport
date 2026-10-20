@@ -283,3 +283,28 @@ button.icon {
 section > .error {
   margin-bottom: 16px;
 }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
+
+.sentinel {
+  height: 1px;
+}
+
+.poster-grid + .inline-error,
+.poster-grid + p {
+  margin-top: 16px;
+}

@@ -1,7 +1,10 @@
 import { useCallback } from "react";
-import { CatalogRef, fetchCatalog, homeCatalogs, typeLabel } from "../api/catalog";
+import { CatalogRef, fetchCatalog, listCatalogs, typeLabel } from "../api/catalog";
 import { LoadableList, useLoad } from "../components/Loadable";
 import PosterCard from "../components/PosterCard";
+
+// Catalogs that need a genre belong on the type pages, not on Home.
+const homeCatalogs = () => listCatalogs().then((all) => all.filter((c) => !c.genreRequired));
 
 /** Home: one row per browsable catalog of the installed addons. */
 export default function BoardScreen() {

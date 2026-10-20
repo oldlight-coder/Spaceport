@@ -155,9 +155,9 @@ async fn addons_reorder(
     state.edit_addons(|c| addons::reorder(c, &order)).await
 }
 
-/// The catalogs shown as Home rows. Falls back to Cinemeta when no installed addon has any.
+/// Browsable catalogs of the installed addons, or Cinemeta's when no installed addon has any.
 #[tauri::command]
-async fn home_catalogs(state: tauri::State<'_, AppState>) -> Result<Vec<CatalogRef>, String> {
+async fn catalogs_list(state: tauri::State<'_, AppState>) -> Result<Vec<CatalogRef>, String> {
     let key = state.auth_key()?;
     let mut sources = state.addon_collection(&key).await?;
     if !catalog::has_catalog_addon(&sources) {
@@ -168,7 +168,7 @@ async fn home_catalogs(state: tauri::State<'_, AppState>) -> Result<Vec<CatalogR
             .map_err(|e| e.to_string())?;
         sources.insert(0, addons::builtin_descriptor(CINEMETA_URL, manifest));
     }
-    Ok(catalog::home_catalogs(&sources))
+    Ok(catalog::browsable_catalogs(&sources))
 }
 
 /// Fetches one page of a catalog from an installed addon.
@@ -225,7 +225,7 @@ pub fn run() {
             addons_remove,
             addons_reorder,
             addons_configure,
-            home_catalogs,
+            catalogs_list,
             catalog_fetch
         ])
         .run(tauri::generate_context!())
