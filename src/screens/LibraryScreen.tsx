@@ -11,7 +11,12 @@ export default function LibraryScreen() {
         {(items) => (
           <ul className="poster-grid">
             {items.map((item) => (
-              <PosterCard key={item.id} name={item.name || item.id} poster={item.poster} />
+              <PosterCard
+                key={item.id}
+                name={item.name || item.id}
+                poster={item.poster}
+                title={{ type: item.type, id: item.id }}
+              />
             ))}
           </ul>
         )}

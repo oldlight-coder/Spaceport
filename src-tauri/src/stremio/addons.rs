@@ -92,6 +92,66 @@ pub fn addon_views(collection: &[Value]) -> Vec<Addon> {
         .collect()
 }
 
+/// Whether an addon declares `resource` for this type and id. A resource is either a plain name,
+/// which uses the manifest's `types` and `idPrefixes`, or an object with its own `types` and
+/// `idPrefixes`. Without `idPrefixes` any id is accepted.
+pub fn supports(manifest: &Value, resource: &str, kind: &str, id: &str) -> bool {
+    let list = |v: &Value, key: &str| -> Option<Vec<String>> {
+        v.get(key).and_then(Value::as_array).map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+    };
+    let Some(resources) = manifest.get("resources").and_then(Value::as_array) else {
+        return false;
+    };
+    resources.iter().any(|r| {
+        let (types, prefixes) = match r {
+            Value::String(name) if name == resource => {
+                (list(manifest, "types"), list(manifest, "idPrefixes"))
+            }
+            Value::Object(_) if r.get("name").and_then(Value::as_str) == Some(resource) => (
+                list(r, "types").or_else(|| list(manifest, "types")),
+                list(r, "idPrefixes").or_else(|| list(manifest, "idPrefixes")),
+            ),
+            _ => return false,
+        };
+        let type_ok = types.is_some_and(|t| t.iter().any(|t| t == kind));
+        let id_ok = match prefixes {
+            Some(p) if !p.is_empty() => p.iter().any(|p| id.starts_with(p.as_str())),
+            _ => true,
+        };
+        type_ok && id_ok
+    })
+}
+
+/// Transport URLs of the addons to ask for `resource`, in collection order, with `preferred`
+/// (usually the addon a title came from) first when it supports the request.
+pub fn resource_sources(
+    collection: &[Value],
+    resource: &str,
+    kind: &str,
+    id: &str,
+    preferred: Option<&str>,
+) -> Vec<String> {
+    let mut urls: Vec<String> = collection
+        .iter()
+        .filter(|d| {
+            d.get("manifest")
+                .is_some_and(|m| supports(m, resource, kind, id))
+        })
+        .filter_map(|d| transport_url(d).map(str::to_string))
+        .collect();
+    if let Some(index) = preferred.and_then(|p| urls.iter().position(|u| u == p)) {
+        let first = urls.remove(index);
+        urls.insert(0, first);
+    }
+    urls
+}
+
 /// Turns what the user typed into a manifest URL. `stremio://` links are served over https.
 pub fn normalize_manifest_url(input: &str) -> Result<String, AddonError> {
     let input = input.trim();
@@ -341,6 +401,47 @@ mod tests {
             Err(AddonError::BadOrder)
         );
         assert_eq!(urls(&c), [CINEMETA, OTHER]);
+    }
+
+    #[test]
+    fn matches_resources_by_type_and_prefix() {
+        let simple = json!({"resources": ["meta", "stream"], "types": ["movie", "series"],
+                            "idPrefixes": ["tt"]});
+        assert!(supports(&simple, "meta", "series", "tt0903747"));
+        assert!(!supports(&simple, "meta", "series", "kitsu:1"));
+        assert!(!supports(&simple, "meta", "anime", "tt1"));
+        assert!(!supports(&simple, "subtitles", "movie", "tt1"));
+
+        let detailed = json!({"resources": [
+                {"name": "meta", "types": ["anime"], "idPrefixes": ["kitsu:"]},
+                "catalog"], "types": ["anime", "movie"]});
+        assert!(supports(&detailed, "meta", "anime", "kitsu:1"));
+        assert!(!supports(&detailed, "meta", "movie", "kitsu:1"));
+
+        let open = json!({"resources": [{"name": "meta"}], "types": ["movie"], "idPrefixes": []});
+        assert!(supports(&open, "meta", "movie", "anything"));
+    }
+
+    #[test]
+    fn orders_resource_sources_with_preferred_first() {
+        let collection = vec![
+            json!({"transportUrl": "a", "manifest": {"resources": ["meta"], "types": ["movie"]}}),
+            json!({"transportUrl": "b", "manifest": {"resources": ["stream"], "types": ["movie"]}}),
+            json!({"transportUrl": "c", "manifest": {"resources": ["meta"], "types": ["movie"]}}),
+        ];
+        assert_eq!(
+            resource_sources(&collection, "meta", "movie", "tt1", None),
+            ["a", "c"]
+        );
+        assert_eq!(
+            resource_sources(&collection, "meta", "movie", "tt1", Some("c")),
+            ["c", "a"]
+        );
+        // A preferred addon that cannot answer is not added.
+        assert_eq!(
+            resource_sources(&collection, "meta", "movie", "tt1", Some("b")),
+            ["a", "c"]
+        );
     }
 
     #[test]

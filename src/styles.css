@@ -155,10 +155,25 @@ section + section {
 }
 
 .poster-card {
+  min-width: 0;
+}
+
+.poster-button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 0;
+  width: 100%;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+}
+
+.poster-button:hover img,
+.poster-button:focus-visible img {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .poster-row {
@@ -307,4 +322,129 @@ select {
 .poster-grid + .inline-error,
 .poster-grid + p {
   margin-top: 16px;
+}
+
+.details {
+  position: relative;
+  padding: 24px;
+}
+
+.back {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 16px;
+}
+
+.details-hero {
+  position: relative;
+  margin: -84px -24px 24px;
+  padding: 84px 24px 24px;
+  overflow: hidden;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.35;
+  mask-image: linear-gradient(to bottom, black 40%, transparent);
+}
+
+.details-head {
+  position: relative;
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+.details-poster {
+  flex: 0 0 220px;
+  width: 220px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.details-text {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 760px;
+}
+
+.details-text p {
+  margin: 0;
+}
+
+.details-logo {
+  max-width: 360px;
+  max-height: 120px;
+  object-fit: contain;
+  object-position: left;
+}
+
+.description {
+  line-height: 1.5;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chips li {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.season-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.season-head h2 {
+  margin: 0;
+}
+
+.episodes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.episode {
+  display: flex;
+  gap: 16px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.episode img,
+.episode-thumb {
+  flex: 0 0 160px;
+  width: 160px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #0f1115;
+}
+
+.episode p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
 }

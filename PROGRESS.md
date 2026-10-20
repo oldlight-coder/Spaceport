@@ -14,7 +14,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Addon list: install by manifest URL, remove, reorder, open configure page; synced to Stremio
 - [x] Home rows from addon catalogs (Cinemeta by default)
 - [x] Movies / Series / Anime pages with genre filter and infinite scroll
-- [ ] Details page: poster, backdrop, description, cast, seasons, episodes
+- [x] Details page: poster, backdrop, description, cast, seasons, episodes
 - [ ] Search across all addon catalogs
 - **Acceptance:** installing an addon by URL shows its catalogs on Home; opening a series shows
   every season and episode; search returns results from more than one addon.
@@ -82,4 +82,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
   Cinemeta used when none has catalogs; rows load in parallel with a 15 s per-addon timeout and
   only installed addons (or Cinemeta) can be contacted. (d2ce0da)
 - 2026-10-20: M2 Movies/Series/Anime pages: catalog picker per type, genre filter from catalog
-  extras (new and legacy forms), infinite scroll with `skip`, stops on empty or repeated page.
+  extras (new and legacy forms), infinite scroll with `skip`, stops on empty or repeated page. (03e7ea2) Owner confirmed it works.
+- 2026-10-20: M2 details page: meta from the first addon declaring `meta` for the type/id prefix
+  (source addon first, Cinemeta fallback); cast/directors/genres from links or legacy fields;
+  episodes grouped by season with specials last.

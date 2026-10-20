@@ -46,6 +46,7 @@ function CatalogRow({ catalog }: { catalog: CatalogRef }) {
                 name={meta.name}
                 poster={meta.poster}
                 shape={meta.posterShape}
+                title={{ type: meta.type || catalog.type, id: meta.id, source: catalog.transportUrl }}
               />
             ))}
           </ul>

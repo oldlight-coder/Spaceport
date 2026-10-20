@@ -12,6 +12,7 @@ use stremio::addons::{self, Addon, AddonError};
 use stremio::api::{StremioApi, ADDON_TIMEOUT, DEFAULT_BASE_URL};
 use stremio::catalog::{self, CatalogRef, MetaPreview, CINEMETA_URL};
 use stremio::library::{visible_items, LibraryItem};
+use stremio::meta::{self, MetaDetails};
 
 struct AppState {
     api: StremioApi,
@@ -34,6 +35,27 @@ impl AppState {
             .map_err(|e| e.to_string())?;
         self.set_sources(collection.clone());
         Ok(collection)
+    }
+
+    /// The addons to use for resource requests, read from Stremio on first use. Cinemeta is
+    /// appended when it is not installed so titles always have a metadata source.
+    async fn sources(&self) -> Result<Vec<Value>, String> {
+        let cached = self.sources.lock().unwrap().clone();
+        let mut sources = if cached.is_empty() {
+            let key = self.auth_key()?;
+            self.addon_collection(&key).await?
+        } else {
+            cached
+        };
+        let has_cinemeta = sources
+            .iter()
+            .any(|d| d.get("transportUrl").and_then(Value::as_str) == Some(CINEMETA_URL));
+        if !has_cinemeta {
+            if let Ok(manifest) = self.api.fetch_manifest(CINEMETA_URL).await {
+                sources.push(addons::builtin_descriptor(CINEMETA_URL, manifest));
+            }
+        }
+        Ok(sources)
     }
 
     fn set_sources(&self, sources: Vec<Value>) {
@@ -191,6 +213,33 @@ async fn catalog_fetch(
     Ok(catalog::parse_metas(&body))
 }
 
+/// Details of one title from the first addon that has them, trying `preferred` (the addon the
+/// title was found in) first.
+#[tauri::command]
+async fn meta_details(
+    state: tauri::State<'_, AppState>,
+    kind: String,
+    id: String,
+    preferred: Option<String>,
+) -> Result<MetaDetails, String> {
+    let sources = state.sources().await?;
+    let urls = addons::resource_sources(&sources, "meta", &kind, &id, preferred.as_deref());
+    let mut last_error = "none of your addons has details for this title".to_string();
+    for transport_url in urls {
+        let url = catalog::resource_url(&transport_url, "meta", &kind, &id, &[])
+            .map_err(|e| e.to_string())?;
+        match state.api.addon_json(&url, ADDON_TIMEOUT).await {
+            Ok(body) => {
+                if let Some(details) = meta::parse_meta(&body) {
+                    return Ok(details);
+                }
+            }
+            Err(e) => last_error = e.to_string(),
+        }
+    }
+    Err(last_error)
+}
+
 /// Opens an addon's configure page in the default browser.
 #[tauri::command]
 async fn addons_configure(
@@ -226,7 +275,8 @@ pub fn run() {
             addons_reorder,
             addons_configure,
             catalogs_list,
-            catalog_fetch
+            catalog_fetch,
+            meta_details
         ])
         .run(tauri::generate_context!())
         .expect("error while running Spaceport");

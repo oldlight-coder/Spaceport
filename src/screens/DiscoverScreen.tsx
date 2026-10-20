@@ -127,7 +127,13 @@ function InfiniteGrid({ catalog, genre }: { catalog: CatalogRef; genre: string }
     <>
       <ul className="poster-grid">
         {items.map((meta) => (
-          <PosterCard key={meta.id} name={meta.name} poster={meta.poster} shape={meta.posterShape} />
+          <PosterCard
+            key={meta.id}
+            name={meta.name}
+            poster={meta.poster}
+            shape={meta.posterShape}
+            title={{ type: meta.type || catalog.type, id: meta.id, source: catalog.transportUrl }}
+          />
         ))}
       </ul>
       {error && (
