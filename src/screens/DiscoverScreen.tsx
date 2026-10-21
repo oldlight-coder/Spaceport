@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CatalogRef, fetchCatalog, listCatalogs, MetaPreview } from "../api/catalog";
 import { LoadableList, useLoad } from "../components/Loadable";
+import NeedAddons from "../components/NeedAddons";
 import PosterCard from "../components/PosterCard";
 
 interface Props {
@@ -21,7 +22,7 @@ export default function DiscoverScreen({ type, title }: Props) {
       <LoadableList
         state={catalogs}
         onRetry={reload}
-        empty={`None of your addons has ${title.toLowerCase()} catalogs.`}
+        empty={<NeedAddons text={`None of your addons has ${title.toLowerCase()} catalogs.`} />}
       >
         {(list) => <CatalogBrowser key={type} catalogs={list} />}
       </LoadableList>

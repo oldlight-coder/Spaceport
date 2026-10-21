@@ -10,3 +10,8 @@ export interface TitleRef {
 export const OpenTitleContext = createContext<(title: TitleRef) => void>(() => {});
 
 export const useOpenTitle = () => useContext(OpenTitleContext);
+
+/** Opens the settings page at its Addons section, for empty states that need an addon. */
+export const OpenAddonsContext = createContext<() => void>(() => {});
+
+export const useOpenAddons = () => useContext(OpenAddonsContext);

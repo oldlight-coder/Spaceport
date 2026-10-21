@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { restoreSession, Session } from "./api/auth";
 import LoginScreen from "./screens/LoginScreen";
+import { useRetryWhenOnline } from "./online";
 import HomeScreen from "./screens/HomeScreen";
 
 type View = { kind: "loading" } | { kind: "error"; message: string } | { kind: "session"; session: Session };
@@ -16,6 +17,8 @@ export default function App() {
   }, []);
 
   useEffect(restore, [restore]);
+  // Starting offline keeps the saved sign-in; try again as soon as the connection returns.
+  useRetryWhenOnline(restore, view.kind === "error");
 
   const onSession = (session: Session) => setView({ kind: "session", session });
 

@@ -62,6 +62,20 @@ struct Envelope<T> {
     error: Option<ErrorBody>,
 }
 
+/// A request failure in plain words. reqwest's own text ("error sending request") does not say
+/// that the computer is offline; the URL is left out because addon URLs can embed tokens.
+fn describe(error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        "the request timed out".to_string()
+    } else if error.is_connect() {
+        "no connection (are you offline?)".to_string()
+    } else if let Some(status) = error.status() {
+        format!("HTTP {status}")
+    } else {
+        error.without_url().to_string()
+    }
+}
+
 /// Turns a raw response body into the `result` value or an `ApiError`.
 fn parse_envelope<T: DeserializeOwned>(body: &str) -> Result<T, ApiError> {
     let envelope: Envelope<T> =
@@ -110,12 +124,12 @@ impl StremioApi {
             .json(&body)
             .send()
             .await
-            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+            .map_err(|e| ApiError::Transport(describe(e)))?;
         let status = response.status();
         let text = response
             .text()
             .await
-            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+            .map_err(|e| ApiError::Transport(describe(e)))?;
         // Stremio reports API errors in the body, sometimes with a non-2xx status, so try the
         // body first and only fall back to the status when it is not a valid envelope.
         match parse_envelope(&text) {
@@ -188,9 +202,7 @@ impl StremioApi {
             .await
             .and_then(|r| r.error_for_status())
             // Configured addon URLs can embed tokens, so keep the URL out of the message.
-            .map_err(|e| {
-                ApiError::Addon(format!("could not load the addon: {}", e.without_url()))
-            })?;
+            .map_err(|e| ApiError::Addon(format!("could not load the addon: {}", describe(e))))?;
         response
             .json()
             .await
@@ -213,7 +225,7 @@ impl StremioApi {
             .timeout(timeout)
             .send()
             .await
-            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+            .map_err(|e| ApiError::Transport(describe(e)))?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
@@ -243,7 +255,7 @@ impl StremioApi {
             .timeout(timeout)
             .send()
             .await
-            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+            .map_err(|e| ApiError::Transport(describe(e)))?;
         let status = response.status();
         if !status.is_success() {
             return Err(ApiError::Transport(format!("HTTP {status}")));
@@ -335,6 +347,22 @@ mod tests {
             parse_envelope::<User>("{}"),
             Err(ApiError::InvalidResponse(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn names_a_refused_connection() {
+        // Nothing listens on a port that was just freed, like a server that cannot be reached.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let api = StremioApi::new(format!("http://127.0.0.1:{port}"));
+        let err = api.get_user("k").await.err().unwrap();
+        assert_eq!(
+            err.to_string(),
+            "could not reach Stremio: no connection (are you offline?)"
+        );
     }
 
     #[test]

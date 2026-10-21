@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchStreams, RankedStream, Stream } from "../api/streams";
+import { fetchStreams, noStreamsReason, RankedStream, Stream } from "../api/streams";
+import NeedAddons from "./NeedAddons";
 import { useLoad } from "./Loadable";
 import StreamTags from "./StreamTags";
 
@@ -85,8 +86,17 @@ export default function StreamsPanel({ type, videoId, heading, onClose, onPick }
               </li>
             ))}
           </ul>
-          {results.data.addons.length === 0 && (
-            <p className="muted">None of your addons provides streams for this title.</p>
+          {results.data.addons.length === 0 ? (
+            <NeedAddons text={noStreamsReason(results.data)!} />
+          ) : (
+            streams.length === 0 && (
+              <div className="inline-error">
+                <p className="muted">{noStreamsReason(results.data)}</p>
+                <button className="secondary" onClick={reload}>
+                  Try again
+                </button>
+              </div>
+            )
           )}
           {streams.length > 0 && (
             <div className="picker-filters">
@@ -129,9 +139,6 @@ export default function StreamsPanel({ type, videoId, heading, onClose, onPick }
           </ol>
           {streams.length > 0 && shown.length === 0 && (
             <p className="muted">No streams match these choices.</p>
-          )}
-          {streams.length === 0 && results.data.hidden.length > 0 && (
-            <p className="muted">Every stream was hidden by your filters.</p>
           )}
           {results.data.hidden.length > 0 && (
             <details className="hidden-streams">

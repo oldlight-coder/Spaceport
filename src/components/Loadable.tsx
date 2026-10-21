@@ -1,4 +1,5 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
+import { useRetryWhenOnline } from "../online";
 
 export type Load<T> =
   | { status: "loading" }
@@ -15,13 +16,15 @@ export function useLoad<T>(load: () => Promise<T>) {
       .catch((e) => setState({ status: "error", message: String(e) }));
   }, [load]);
   useEffect(reload, [reload]);
+  // A load that failed (often for want of a connection) is tried again once it is back.
+  useRetryWhenOnline(reload, state.status === "error");
   return [state, reload, setState] as const;
 }
 
 interface LoadableListProps<T> {
   state: Load<T[]>;
   onRetry: () => void;
-  empty: string;
+  empty: ReactNode;
   children: (data: T[]) => ReactNode;
 }
 
@@ -40,6 +43,7 @@ export function LoadableList<T>({ state, onRetry, empty, children }: LoadableLis
         </div>
       );
     case "ready":
-      return state.data.length === 0 ? <p className="muted">{empty}</p> : <>{children(state.data)}</>;
+      if (state.data.length > 0) return <>{children(state.data)}</>;
+      return typeof empty === "string" ? <p className="muted">{empty}</p> : <>{empty}</>;
   }
 }

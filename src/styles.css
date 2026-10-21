@@ -139,6 +139,13 @@ section + section {
   margin-top: 32px;
 }
 
+.offline-banner {
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--danger);
+  background: #2a1717;
+  font-size: 14px;
+}
+
 .inline-error {
   display: flex;
   align-items: center;

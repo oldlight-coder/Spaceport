@@ -322,7 +322,7 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
         </label>
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section" id="settings-addons">
         <AddonsScreen />
       </section>
     </div>

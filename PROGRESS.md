@@ -50,14 +50,14 @@ pass on Windows. The owner tests each milestone before the next one starts.
   in the official Stremio app.
 
 ## M7. AniSkip
-- [ ] Map title to MyAnimeList ID (Kitsu or AniList)
-- [ ] Fetch skip times from api.aniskip.com
-- [ ] Skip Intro / Skip Outro buttons and optional auto-skip
+- [x] Map title to MyAnimeList ID (Kitsu or AniList)
+- [x] Fetch skip times from api.aniskip.com
+- [x] Skip Intro / Skip Outro buttons and optional auto-skip
 - **Acceptance:** a popular anime episode shows Skip Intro at the right time; auto-skip jumps past
   it when enabled.
 
 ## M8. Polish and release
-- [ ] Settings page (filters, languages, subtitle style, auto-skip, cache size)
+- [x] Settings page (filters, languages, subtitle style, auto-skip, cache size)
 - [ ] Error states (no addons, no streams, offline)
 - [ ] README with build steps; final privacy check of all network calls
 - **Acceptance:** fresh Windows install from the NSIS installer works end to end: login, browse,
@@ -198,3 +198,10 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-21: Resume keeps the source: the stream playing (after a manual pick, fallback or Source
   menu switch) is saved with the position in resume.json by a key (torrent hash and file, or addon
   and file name; never the link) and goes first when that video is played again.
+- 2026-10-21: M7 accepted by the owner on Windows (Frieren shows Skip Intro). M7 ticked.
+- 2026-10-21: M8 Settings page ticked: filters, languages, subtitle style, auto-skip and cache
+  size were built and tested with the earlier milestones.
+- 2026-10-21: M8 error states implemented (not yet ticked: needs a Windows check): offline banner,
+  failed pages and sign-in retry when the connection returns, network errors say "no connection"
+  or "timed out", empty catalogs/search/streams offer "Manage addons", and Play explains why no
+  stream started (no stream addons, none answered, none found, all hidden by filters).

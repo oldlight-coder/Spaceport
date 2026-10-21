@@ -5,6 +5,7 @@ import { continueWatching, episodeLabel, watchedShare } from "../api/progress";
 import PosterCard from "../components/PosterCard";
 import CatalogRow from "../components/CatalogRow";
 import { LoadableList, useLoad } from "../components/Loadable";
+import NeedAddons from "../components/NeedAddons";
 
 // Catalogs that need a genre belong on the type pages, not on Home.
 const homeCatalogs = () => listCatalogs().then((all) => all.filter((c) => !c.genreRequired));
@@ -13,7 +14,11 @@ const homeCatalogs = () => listCatalogs().then((all) => all.filter((c) => !c.gen
 export default function BoardScreen() {
   const [catalogs, reload] = useLoad(homeCatalogs);
   return (
-    <LoadableList state={catalogs} onRetry={reload} empty="None of your addons has catalogs.">
+    <LoadableList
+      state={catalogs}
+      onRetry={reload}
+      empty={<NeedAddons text="None of your addons has catalogs. Install one to browse here." />}
+    >
       {(list) => (
         <div className="rows">
           <ContinueRow />

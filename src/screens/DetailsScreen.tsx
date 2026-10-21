@@ -14,7 +14,7 @@ import { titleProgress, VideoProgress, watchedShare } from "../api/progress";
 import { getWatched, setWatched, WatchedMarks } from "../api/watched";
 import { TitleInfo } from "../api/player";
 import { formatTime } from "../format";
-import { fetchStreams, RankedStream } from "../api/streams";
+import { fetchStreams, noStreamsReason, RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
 import { TitleRef } from "../navigation";
@@ -191,7 +191,8 @@ function Details({ meta }: { meta: MetaDetails }) {
       const resumeSource = saved && saved.position > 0 ? saved.source : null;
       const ranked = preferSaved(results, resumeSource);
       if (ranked.length === 0) {
-        setNotice({ text: "No stream passed your filters; choose one yourself.", error: true });
+        // The picker shows the same reason next to each addon's outcome and hidden streams.
+        setNotice({ text: noStreamsReason(results) ?? "No stream found.", error: true });
         setTarget(target);
         return;
       }
