@@ -74,6 +74,27 @@ impl PlayQueue {
         &self.candidates[self.index].label
     }
 
+    pub fn labels(&self) -> Vec<String> {
+        self.candidates.iter().map(|c| c.label.clone()).collect()
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// The user picked another source: play it from the current position.
+    pub fn select(&mut self, index: usize, now: Instant) -> Option<Action> {
+        let next = self.candidates.get(index)?.clone();
+        self.index = index;
+        self.loaded = false;
+        self.started_at = now;
+        Some(Action::Load {
+            url: next.url,
+            label: next.label,
+            start: self.position.filter(|p| *p > 1.0),
+        })
+    }
+
     pub fn on_loaded(&mut self) {
         self.loaded = true;
     }
@@ -265,6 +286,21 @@ mod tests {
         let (mut q, _) = PlayQueue::new(candidates(2), now).unwrap();
         q.on_position(100.0);
         assert_eq!(q.on_end_of_file(now), Action::Wait);
+    }
+
+    #[test]
+    fn switching_source_keeps_position() {
+        let now = Instant::now();
+        let (mut q, _) = PlayQueue::new(candidates(3), now).unwrap();
+        q.on_loaded();
+        q.on_position(300.0);
+        assert_eq!(
+            q.select(2, now),
+            Some(load("https://debrid.example/3", Some(300.0)))
+        );
+        assert_eq!(q.index(), 2);
+        assert_eq!(q.select(9, now), None);
+        assert_eq!(q.labels().len(), 3);
     }
 
     #[test]

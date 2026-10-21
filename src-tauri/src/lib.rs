@@ -1,4 +1,5 @@
 mod auth;
+mod language;
 mod player;
 mod ranking;
 mod secrets;
@@ -299,13 +300,16 @@ async fn streams_fetch(
 }
 
 /// Plays the first of the ranked candidates in the embedded player and falls back to the next
-/// on failure, then opens the controls window. Async because creating a window from a
-/// synchronous command deadlocks on Windows; the video window itself is made on the main thread.
+/// on failure, then opens the controls window and looks up subtitles from the addons. Async
+/// because creating a window from a synchronous command deadlocks on Windows; the video window
+/// itself is made on the main thread.
 #[tauri::command]
 async fn player_open(
     app: tauri::AppHandle,
     candidates: Vec<player::Candidate>,
     title: String,
+    kind: String,
+    video_id: String,
 ) -> Result<(), String> {
     let candidates: Vec<player::Candidate> = candidates
         .into_iter()
@@ -314,17 +318,49 @@ async fn player_open(
     if candidates.is_empty() {
         return Err("none of these streams can be played yet".to_string());
     }
+    let settings = app.state::<AppState>().settings.lock().unwrap().clone();
+    let audio_languages = language::mpv_list(&settings.audio_languages);
     let (sender, receiver) = std::sync::mpsc::channel();
     let handle = app.clone();
     app.run_on_main_thread(move || {
         let state = handle.state::<AppState>();
-        let _ = sender.send(state.player.open(&handle, candidates, &title));
+        let result = state
+            .player
+            .open(&handle, candidates, &title, &audio_languages);
+        let _ = sender.send(result);
     })
     .map_err(|e| e.to_string())?;
     receiver
         .recv()
         .map_err(|_| "the player did not start".to_string())??;
-    player::open_controls(&app)
+    player::open_controls(&app)?;
+
+    // Subtitles are not needed to start playing, so they arrive when the addons answer.
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = handle.state::<AppState>();
+        let Ok(sources) = state.sources().await else {
+            return;
+        };
+        let urls = addons::resource_sources(&sources, "subtitles", &kind, &video_id, None);
+        let views = addons::addon_views(&sources);
+        let targets = urls
+            .into_iter()
+            .map(|url| {
+                let name = views
+                    .iter()
+                    .find(|a| a.transport_url == url)
+                    .map(|a| a.name.clone())
+                    .unwrap_or_else(|| url.clone());
+                (name, url)
+            })
+            .collect();
+        let found =
+            stremio::subtitles::fetch_subtitles(&state.api, targets, &kind, &video_id).await;
+        let ordered = stremio::subtitles::order_and_label(found, &settings.subtitle_languages);
+        state.player.set_addon_subtitles(&handle, ordered);
+    });
+    Ok(())
 }
 
 #[tauri::command]

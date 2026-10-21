@@ -158,3 +158,77 @@ select option {
   max-width: 70%;
   text-align: center;
 }
+
+.menu {
+  position: relative;
+}
+
+.menu-button.open {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.menu-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  min-width: 240px;
+  max-width: 420px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(20, 22, 30, 0.96);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+.menu-section + .menu-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.menu-heading {
+  padding: 4px 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.menu-empty {
+  padding: 6px 10px;
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.menu-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  text-align: left;
+  border-radius: 6px;
+}
+
+.menu-option:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.menu-option.selected {
+  color: var(--accent);
+}
+
+.menu-option .check {
+  width: 14px;
+  flex: none;
+}
+
+.menu-detail {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 12px;
+  opacity: 0.6;
+  white-space: nowrap;
+}

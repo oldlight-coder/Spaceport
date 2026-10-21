@@ -29,8 +29,9 @@ export function candidatesFrom(ranked: RankedStream[], first?: RankedStream): Ca
     .map((s) => ({ url: s.url!, label: (s.name ?? s.addonName).replace(/\s+/g, " ") }));
 }
 
-export const openPlayer = (candidates: Candidate[], title: string) =>
-  invoke<void>("player_open", { candidates, title });
+/** `type` and `videoId` identify the video, for fetching subtitles from addons. */
+export const openPlayer = (candidates: Candidate[], title: string, type: string, videoId: string) =>
+  invoke<void>("player_open", { candidates, title, kind: type, videoId });
 
 export const closePlayer = () => invoke<void>("player_close");
 

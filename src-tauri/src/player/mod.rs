@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::stremio::subtitles::AddonSubtitle;
 use mpv::{Event, Mpv, MpvLib, FORMAT_DOUBLE, FORMAT_FLAG, FORMAT_STRING};
 pub use queue::Candidate;
 use queue::{Action, PlayQueue};
@@ -54,6 +55,8 @@ const OBSERVED: &[(&str, i32)] = &[
     ("pause", FORMAT_FLAG),
     ("mute", FORMAT_FLAG),
     ("paused-for-cache", FORMAT_FLAG),
+    ("seeking", FORMAT_FLAG),
+    ("seekable", FORMAT_FLAG),
     ("track-list", FORMAT_STRING),
 ];
 
@@ -100,6 +103,15 @@ pub enum Control {
     },
     SetAudioTrack {
         id: i64,
+    },
+    /// Subtitles off, an embedded track (`track`), or an addon subtitle by `key`.
+    SetSubtitle {
+        track: Option<i64>,
+        key: Option<String>,
+    },
+    /// Switch to another of the ranked streams, keeping the position.
+    SetSource {
+        index: usize,
     },
     ToggleFullscreen,
     /// Leave fullscreen, or close the player when not in fullscreen.
@@ -172,17 +184,25 @@ impl Player {
 
     /// Plays the first of `candidates` (ranked best first) and falls back down the list when a
     /// stream fails. Reuses the open player if there is one. Main thread only.
+    /// `audio_languages` is mpv's `alang` list for picking the dub.
     pub fn open(
         &self,
         app: &AppHandle,
         candidates: Vec<Candidate>,
         title: &str,
+        audio_languages: &str,
     ) -> Result<(), String> {
         let (queue, first) =
             PlayQueue::new(candidates, Instant::now()).ok_or("there is no stream to play")?;
         let mut session = self.session.lock().unwrap();
         if let Some(existing) = session.as_ref() {
-            existing.state.lock().unwrap().title = title.to_string();
+            {
+                let mut state = existing.state.lock().unwrap();
+                state.title = title.to_string();
+                state.sources = queue.labels();
+                state.source_index = 0;
+                state.set_addon_subtitles(Vec::new());
+            }
             existing.mpv.set_property("force-media-title", title)?;
             *existing.queue.lock().unwrap() = Some(queue);
             return apply(&existing.mpv, first);
@@ -194,6 +214,9 @@ impl Player {
         let wid = surface.id().to_string();
         let mut options = BASE_OPTIONS.to_vec();
         options.push(("wid", &wid));
+        if !audio_languages.is_empty() {
+            options.push(("alang", audio_languages));
+        }
         let mpv = match Mpv::new(lib, &options) {
             Ok(mpv) => Arc::new(mpv),
             Err(e) => {
@@ -209,6 +232,13 @@ impl Player {
         let queue: SharedQueue = Arc::new(Mutex::new(Some(queue)));
         let state: SharedState = Arc::new(Mutex::new(PlaybackState {
             title: title.to_string(),
+            seekable: true,
+            sources: queue
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(PlayQueue::labels)
+                .unwrap_or_default(),
             ..PlaybackState::default()
         }));
         spawn_event_thread(app.clone(), mpv.clone(), queue.clone(), state.clone());
@@ -243,6 +273,48 @@ impl Player {
                 mpv.set_property("speed", &format!("{:.2}", speed.clamp(0.25, 4.0)))
             }
             Control::SetAudioTrack { id } => mpv.set_property("aid", &id.to_string()),
+            Control::SetSubtitle { track, key } => {
+                if let Some(id) = track {
+                    return mpv.set_property("sid", &id.to_string());
+                }
+                let Some(key) = key else {
+                    return mpv.set_property("sid", "no");
+                };
+                let state = session.state.lock().unwrap();
+                let sub = state
+                    .addon_subtitle_files
+                    .iter()
+                    .find(|s| s.key == key)
+                    .ok_or("that subtitle is no longer offered")?;
+                // Loaded before: switch back to it instead of downloading it again.
+                let loaded = state
+                    .subtitle_tracks
+                    .iter()
+                    .find(|t| t.external_url.as_deref() == Some(sub.url.as_str()));
+                match loaded {
+                    Some(track) => mpv.set_property("sid", &track.id.to_string()),
+                    None => {
+                        let title = format!("{} · {}", sub.label, sub.addon_name);
+                        mpv.command(&["sub-add", &sub.url, "select", &title, &sub.lang])
+                    }
+                }
+            }
+            Control::SetSource { index } => {
+                let action = session
+                    .queue
+                    .lock()
+                    .unwrap()
+                    .as_mut()
+                    .and_then(|q| q.select(index, Instant::now()))
+                    .ok_or("that source is not available")?;
+                {
+                    let mut state = session.state.lock().unwrap();
+                    state.source_index = index;
+                    state.stream.clear();
+                    let _ = app.emit("player-state", state.clone());
+                }
+                apply(mpv, action)
+            }
             Control::ToggleFullscreen => {
                 let window = main_window(app)?;
                 let full = window.is_fullscreen().map_err(|e| e.to_string())?;
@@ -257,6 +329,16 @@ impl Player {
                 }
             }
             Control::Close => mpv.command(&["quit"]),
+        }
+    }
+
+    /// Offers the subtitles the addons returned for the playing video.
+    pub fn set_addon_subtitles(&self, app: &AppHandle, subs: Vec<AddonSubtitle>) {
+        let session = self.session.lock().unwrap();
+        if let Some(session) = session.as_ref() {
+            let mut state = session.state.lock().unwrap();
+            state.set_addon_subtitles(subs);
+            let _ = app.emit("player-state", state.clone());
         }
     }
 
@@ -438,9 +520,11 @@ fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue, state: 
                 Event::FileLoaded => {
                     q.on_loaded();
                     let label = q.current_label().to_string();
+                    let index = q.index();
                     drop(guard);
                     let mut current = state.lock().unwrap();
                     current.stream = label.clone();
+                    current.source_index = index;
                     let _ = app.emit("player-state", current.clone());
                     let _ = app.emit("player", PlayerEvent::Loaded { label });
                 }

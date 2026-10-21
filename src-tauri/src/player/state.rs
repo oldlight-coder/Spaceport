@@ -3,13 +3,31 @@
 use serde::{Deserialize, Serialize};
 
 use super::mpv::PropertyValue;
+use crate::language;
+use crate::stremio::subtitles::AddonSubtitle;
 
+/// An audio or subtitle track inside the playing file (or a subtitle added from an addon).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AudioTrack {
+pub struct Track {
     pub id: i64,
-    /// A readable name: the track title, else language and codec.
+    /// A readable name: language, title and format details.
     pub label: String,
+    pub selected: bool,
+    /// Loaded from outside the file (an addon subtitle); the UI lists those separately.
+    pub external: bool,
+    /// For subtitles loaded from a URL, that URL.
+    #[serde(skip)]
+    pub external_url: Option<String>,
+}
+
+/// A subtitle offered by an addon, as the controls list it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddonSubtitleView {
+    pub key: String,
+    pub label: String,
+    pub addon_name: String,
     pub selected: bool,
 }
 
@@ -27,7 +45,20 @@ pub struct PlaybackState {
     pub volume: f64,
     pub muted: bool,
     pub speed: f64,
-    pub audio_tracks: Vec<AudioTrack>,
+    /// mpv is moving to a new position.
+    pub seeking: bool,
+    /// Whether the stream allows seeking beyond what has loaded.
+    pub seekable: bool,
+    pub audio_tracks: Vec<Track>,
+    /// Subtitle tracks mpv has, including addon subtitles once loaded (marked `external`).
+    pub subtitle_tracks: Vec<Track>,
+    pub addon_subtitles: Vec<AddonSubtitleView>,
+    /// Every addon subtitle with its URL, kept for loading on demand.
+    #[serde(skip)]
+    pub addon_subtitle_files: Vec<AddonSubtitle>,
+    /// Labels of the streams that can be switched to, best first.
+    pub sources: Vec<String>,
+    pub source_index: usize,
 }
 
 /// One entry of mpv's `track-list` JSON; only the fields used here.
@@ -46,6 +77,10 @@ struct RawTrack {
     channels: Option<u32>,
     #[serde(default)]
     selected: bool,
+    #[serde(default)]
+    forced: bool,
+    #[serde(rename = "external-filename", default)]
+    external_filename: Option<String>,
 }
 
 fn channel_label(count: u32) -> String {
@@ -58,37 +93,76 @@ fn channel_label(count: u32) -> String {
     }
 }
 
-/// Reads the audio tracks out of mpv's `track-list` property.
-pub fn audio_tracks(track_list_json: &str) -> Vec<AudioTrack> {
-    let tracks: Vec<RawTrack> = serde_json::from_str(track_list_json).unwrap_or_default();
-    tracks
-        .into_iter()
-        .filter(|t| t.kind == "audio")
-        .map(|t| {
-            let details: Vec<String> = [
-                t.lang.clone().map(|l| l.to_uppercase()),
-                t.codec.clone().map(|c| c.to_uppercase()),
-                t.channels.map(channel_label),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            let label = match (t.title.filter(|s| !s.trim().is_empty()), details.is_empty()) {
-                (Some(title), true) => title,
-                (Some(title), false) => format!("{title} ({})", details.join(", ")),
-                (None, false) => details.join(", "),
-                (None, true) => format!("Track {}", t.id),
-            };
-            AudioTrack {
-                id: t.id,
-                label,
-                selected: t.selected,
-            }
+fn track_label(t: &RawTrack) -> String {
+    let language = t.lang.as_deref().map(language::name);
+    let mut details: Vec<String> = Vec::new();
+    if let Some(codec) = &t.codec {
+        details.push(codec.to_uppercase());
+    }
+    if let Some(channels) = t.channels {
+        details.push(channel_label(channels));
+    }
+    if t.forced {
+        details.push("forced".into());
+    }
+    let title = t.title.clone().filter(|s| !s.trim().is_empty());
+    let head = match (language, title) {
+        (Some(lang), Some(title)) if !title.eq_ignore_ascii_case(&lang) => {
+            format!("{lang} · {title}")
+        }
+        (Some(lang), _) => lang,
+        (None, Some(title)) => title,
+        (None, None) => format!("Track {}", t.id),
+    };
+    if details.is_empty() {
+        head
+    } else {
+        format!("{head} ({})", details.join(", "))
+    }
+}
+
+/// Reads the tracks of one type ("audio" or "sub") out of mpv's `track-list` property.
+pub fn tracks(track_list_json: &str, kind: &str) -> Vec<Track> {
+    let raw: Vec<RawTrack> = serde_json::from_str(track_list_json).unwrap_or_default();
+    raw.into_iter()
+        .filter(|t| t.kind == kind)
+        .map(|t| Track {
+            id: t.id,
+            label: track_label(&t),
+            selected: t.selected,
+            external: t.external_filename.is_some(),
+            external_url: t.external_filename.clone(),
+        })
+        .collect()
+}
+
+/// The addon subtitles with the one mpv is showing marked as selected.
+pub fn addon_subtitle_views(subs: &[AddonSubtitle], loaded: &[Track]) -> Vec<AddonSubtitleView> {
+    subs.iter()
+        .map(|s| AddonSubtitleView {
+            key: s.key.clone(),
+            label: s.label.clone(),
+            addon_name: s.addon_name.clone(),
+            selected: loaded
+                .iter()
+                .any(|t| t.selected && t.external_url.as_deref() == Some(s.url.as_str())),
         })
         .collect()
 }
 
 impl PlaybackState {
+    /// Replaces the addon subtitles offered for this video.
+    pub fn set_addon_subtitles(&mut self, subs: Vec<AddonSubtitle>) {
+        self.addon_subtitle_files = subs;
+        self.refresh_addon_subtitles();
+    }
+
+    /// Recomputes which addon subtitle is showing, after the track list or the list changed.
+    fn refresh_addon_subtitles(&mut self) {
+        self.addon_subtitles =
+            addon_subtitle_views(&self.addon_subtitle_files, &self.subtitle_tracks);
+    }
+
     /// Applies one observed property. Returns whether the change is worth sending right away
     /// (the position changes every frame and is sent at a slower pace).
     pub fn apply(&mut self, name: &str, value: &PropertyValue) -> bool {
@@ -103,7 +177,13 @@ impl PlaybackState {
             ("pause", PropertyValue::Flag(v)) => self.paused = *v,
             ("mute", PropertyValue::Flag(v)) => self.muted = *v,
             ("paused-for-cache", PropertyValue::Flag(v)) => self.buffering = *v,
-            ("track-list", PropertyValue::Text(json)) => self.audio_tracks = audio_tracks(json),
+            ("seeking", PropertyValue::Flag(v)) => self.seeking = *v,
+            ("seekable", PropertyValue::Flag(v)) => self.seekable = *v,
+            ("track-list", PropertyValue::Text(json)) => {
+                self.audio_tracks = tracks(json, "audio");
+                self.subtitle_tracks = tracks(json, "sub");
+                self.refresh_addon_subtitles();
+            }
             _ => return false,
         }
         true
@@ -120,29 +200,76 @@ mod tests {
         {"id":2,"type":"audio","title":"English","lang":"eng","codec":"aac","demux-channel-count":2,"selected":false},
         {"id":3,"type":"audio","title":"Commentary"},
         {"id":4,"type":"audio"},
-        {"id":1,"type":"sub","lang":"eng"}
+        {"id":1,"type":"sub","lang":"eng","codec":"subrip"},
+        {"id":2,"type":"sub","lang":"ger","forced":true,"codec":"ass"},
+        {"id":3,"type":"sub","title":"English","lang":"eng","codec":"subrip","selected":true,
+         "external-filename":"https://subs.example/1.srt"}
     ]"#;
 
     #[test]
     fn reads_audio_tracks() {
-        let tracks = audio_tracks(TRACK_LIST);
-        let labels: Vec<&str> = tracks.iter().map(|t| t.label.as_str()).collect();
+        let audio = tracks(TRACK_LIST, "audio");
+        let labels: Vec<&str> = audio.iter().map(|t| t.label.as_str()).collect();
         assert_eq!(
             labels,
             [
-                "GER, EAC3, 5.1",
-                "English (ENG, AAC, stereo)",
+                "German (EAC3, 5.1)",
+                "English (AAC, stereo)",
                 "Commentary",
                 "Track 4"
             ]
         );
-        assert!(tracks[0].selected && !tracks[1].selected);
+        assert!(audio[0].selected && !audio[1].selected);
+    }
+
+    #[test]
+    fn reads_subtitle_tracks() {
+        let subs = tracks(TRACK_LIST, "sub");
+        let labels: Vec<&str> = subs.iter().map(|t| t.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "English (SUBRIP)",
+                "German (ASS, forced)",
+                "English (SUBRIP)"
+            ]
+        );
+        assert_eq!(
+            subs[2].external_url.as_deref(),
+            Some("https://subs.example/1.srt")
+        );
+    }
+
+    #[test]
+    fn marks_the_addon_subtitle_mpv_shows() {
+        let addon = |key: &str, url: &str| AddonSubtitle {
+            key: key.into(),
+            url: url.into(),
+            lang: "eng".into(),
+            lang_code: Some("en".into()),
+            label: "English".into(),
+            addon_name: "OpenSubtitles".into(),
+        };
+        let subs = vec![
+            addon("a", "https://subs.example/1.srt"),
+            addon("b", "https://subs.example/2.srt"),
+        ];
+        let mut state = PlaybackState::default();
+        state.set_addon_subtitles(subs);
+        assert!(!state.addon_subtitles[0].selected);
+        state.apply("track-list", &PropertyValue::Text(TRACK_LIST.into()));
+        assert!(state.addon_subtitles[0].selected);
+        assert!(!state.addon_subtitles[1].selected);
+        assert_eq!(
+            state.subtitle_tracks.iter().filter(|t| !t.external).count(),
+            2
+        );
     }
 
     #[test]
     fn bad_track_list_gives_no_tracks() {
-        assert!(audio_tracks("not json").is_empty());
-        assert!(audio_tracks("[]").is_empty());
+        assert!(tracks("not json", "audio").is_empty());
+        assert!(tracks("[]", "sub").is_empty());
     }
 
     #[test]

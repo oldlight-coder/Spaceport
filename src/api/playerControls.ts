@@ -1,9 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-export interface AudioTrack {
+export interface Track {
   id: number;
   label: string;
+  selected: boolean;
+  /** Loaded from an addon rather than part of the file. */
+  external: boolean;
+}
+
+export interface AddonSubtitle {
+  key: string;
+  label: string;
+  addonName: string;
   selected: boolean;
 }
 
@@ -17,7 +26,13 @@ export interface PlaybackState {
   volume: number;
   muted: boolean;
   speed: number;
-  audioTracks: AudioTrack[];
+  seeking: boolean;
+  seekable: boolean;
+  audioTracks: Track[];
+  subtitleTracks: Track[];
+  addonSubtitles: AddonSubtitle[];
+  sources: string[];
+  sourceIndex: number;
 }
 
 export type Control =
@@ -27,6 +42,8 @@ export type Control =
   | { action: "toggleMute" }
   | { action: "setSpeed"; speed: number }
   | { action: "setAudioTrack"; id: number }
+  | { action: "setSubtitle"; track: number | null; key: string | null }
+  | { action: "setSource"; index: number }
   | { action: "toggleFullscreen" }
   | { action: "back" }
   | { action: "close" };

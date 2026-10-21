@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { onPlayerEvent } from "../api/player";
 import { control, Control, currentState, onPlaybackState, PlaybackState } from "../api/playerControls";
 
 const HIDE_AFTER_MS = 3000;
+const SKIP_SECONDS = 10;
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+/** A seek counts as done once playback is this close to the target, in seconds. */
+const SEEK_TOLERANCE = 3;
+/** Stop holding the seek target after this long, in case the seek never lands. */
+const SEEK_HOLD_MS = 30_000;
 
 export function formatTime(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -18,13 +23,85 @@ const send = (c: Control) => {
   control(c).catch(() => {});
 };
 
+type MenuName = "audio" | "subtitles" | "source" | "speed";
+
+interface Option {
+  key: string;
+  label: string;
+  detail?: string;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+interface Section {
+  heading?: string;
+  options: Option[];
+  empty?: string;
+}
+
+/** A button in the control bar that opens a list of choices above it. */
+function Menu({
+  name,
+  label,
+  open,
+  onToggle,
+  sections,
+}: {
+  name: MenuName;
+  label: string;
+  open: boolean;
+  onToggle: (name: MenuName) => void;
+  sections: Section[];
+}) {
+  return (
+    <div className="menu">
+      <button
+        className={open ? "menu-button open" : "menu-button"}
+        onClick={() => onToggle(name)}
+        aria-expanded={open}
+      >
+        {label}
+      </button>
+      {open && (
+        <div className="menu-panel" role="menu">
+          {sections.map((section, i) => (
+            <div key={i} className="menu-section">
+              {section.heading && <div className="menu-heading">{section.heading}</div>}
+              {section.options.length === 0 && section.empty && (
+                <div className="menu-empty">{section.empty}</div>
+              )}
+              {section.options.map((o) => (
+                <button
+                  key={o.key}
+                  className={o.selected ? "menu-option selected" : "menu-option"}
+                  role="menuitemradio"
+                  aria-checked={o.selected}
+                  onClick={o.onSelect}
+                >
+                  <span className="check">{o.selected ? "✓" : ""}</span>
+                  <span>{o.label}</span>
+                  {o.detail && <span className="menu-detail">{o.detail}</span>}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The player controls, drawn in a transparent window over the video. */
 export default function Controls() {
   const [state, setState] = useState<PlaybackState | null>(null);
   const [idle, setIdle] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [menu, setMenu] = useState<MenuName | null>(null);
   // While the seek bar is dragged, show the dragged position instead of the playing one.
   const [dragging, setDragging] = useState<number | null>(null);
+  // After a seek, keep showing the target until playback gets there: seeking into a part that
+  // has not loaded yet can take a few seconds.
+  const [pendingSeek, setPendingSeek] = useState<{ target: number; at: number } | null>(null);
   const hideTimer = useRef<number | undefined>(undefined);
   const clickTimer = useRef<number | undefined>(undefined);
   const overBar = useRef(false);
@@ -42,6 +119,36 @@ export default function Controls() {
     };
   }, []);
 
+  // Release the held seek target once playback has reached it (or given up).
+  useEffect(() => {
+    if (!pendingSeek || !state) return;
+    const arrived = Math.abs(state.position - pendingSeek.target) <= SEEK_TOLERANCE;
+    if ((arrived && !state.seeking) || Date.now() - pendingSeek.at > SEEK_HOLD_MS) {
+      setPendingSeek(null);
+    }
+  }, [state, pendingSeek]);
+
+  const seekTo = useCallback(
+    (target: number) => {
+      const duration = state?.duration ?? 0;
+      const clamped = Math.max(0, duration > 0 ? Math.min(target, duration - 1) : target);
+      setPendingSeek({ target: clamped, at: Date.now() });
+      if (state && !state.seekable) {
+        setToast("This stream only allows seeking within the part that has loaded.");
+      }
+      send({ action: "seek", seconds: clamped, relative: false });
+    },
+    [state],
+  );
+
+  const skip = useCallback(
+    (delta: number) => {
+      const from = pendingSeek?.target ?? state?.position ?? 0;
+      seekTo(from + delta);
+    },
+    [pendingSeek, state, seekTo],
+  );
+
   const paused = state?.paused ?? false;
 
   // Show the controls on any activity; hide them again while playing.
@@ -49,22 +156,24 @@ export default function Controls() {
     setIdle(false);
     window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => {
-      if (!overBar.current) setIdle(true);
+      if (!overBar.current) {
+        setIdle(true);
+        setMenu(null);
+      }
     }, HIDE_AFTER_MS);
   }, []);
 
   useEffect(() => {
-    if (paused) {
+    if (paused || menu) {
       window.clearTimeout(hideTimer.current);
       setIdle(false);
     } else {
       wake();
     }
-  }, [paused, wake]);
+  }, [paused, menu, wake]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLSelectElement) return;
       wake();
       const volume = state?.volume ?? 100;
       switch (e.key) {
@@ -74,11 +183,11 @@ export default function Controls() {
           break;
         case "ArrowLeft":
         case "j":
-          send({ action: "seek", seconds: -10, relative: true });
+          skip(-SKIP_SECONDS);
           break;
         case "ArrowRight":
         case "l":
-          send({ action: "seek", seconds: 10, relative: true });
+          skip(SKIP_SECONDS);
           break;
         case "ArrowUp":
           send({ action: "setVolume", volume: volume + 5 });
@@ -93,7 +202,8 @@ export default function Controls() {
           send({ action: "toggleFullscreen" });
           break;
         case "Escape":
-          send({ action: "back" });
+          if (menu) setMenu(null);
+          else send({ action: "back" });
           break;
         default:
           return;
@@ -102,11 +212,15 @@ export default function Controls() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state?.volume, wake]);
+  }, [state?.volume, wake, skip, menu]);
 
-  // A single click pauses; a double click toggles fullscreen instead.
+  // A single click pauses (or closes an open menu); a double click toggles fullscreen.
   function onSurfaceClick(e: React.MouseEvent) {
     if (e.target !== e.currentTarget) return;
+    if (menu) {
+      setMenu(null);
+      return;
+    }
     window.clearTimeout(clickTimer.current);
     clickTimer.current = window.setTimeout(() => send({ action: "togglePause" }), 220);
   }
@@ -117,10 +231,32 @@ export default function Controls() {
     send({ action: "toggleFullscreen" });
   }
 
+  const toggleMenu = (name: MenuName) => setMenu((current) => (current === name ? null : name));
+  const choose = (c: Control) => {
+    send(c);
+    setMenu(null);
+  };
+
   const duration = state?.duration ?? 0;
-  const position = dragging ?? state?.position ?? 0;
+  const position = dragging ?? pendingSeek?.target ?? state?.position ?? 0;
   const loading = !state?.stream;
+  const seeking = pendingSeek != null || state?.seeking;
+
   const audioTracks = state?.audioTracks ?? [];
+  const embeddedSubs = (state?.subtitleTracks ?? []).filter((t) => !t.external);
+  const addonSubs = state?.addonSubtitles ?? [];
+  const subtitlesOff =
+    !embeddedSubs.some((t) => t.selected) && !addonSubs.some((s) => s.selected);
+  const currentAudio = audioTracks.find((t) => t.selected);
+  const currentSub =
+    embeddedSubs.find((t) => t.selected)?.label ?? addonSubs.find((s) => s.selected)?.label;
+  const sources = state?.sources ?? [];
+  const speed = state?.speed ?? 1;
+
+  let badge: ReactNode = null;
+  if (loading) badge = "Starting stream…";
+  else if (seeking) badge = "Seeking…";
+  else if (state?.buffering) badge = "Buffering…";
 
   return (
     <div
@@ -139,9 +275,9 @@ export default function Controls() {
         </div>
       </div>
 
-      {(loading || state?.buffering) && (
+      {badge && (
         <div className="centre">
-          <span className="badge">{loading ? "Starting stream…" : "Buffering…"}</span>
+          <span className="badge">{badge}</span>
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
@@ -163,12 +299,12 @@ export default function Controls() {
             disabled={duration <= 0}
             onChange={(e) => setDragging(Number(e.target.value))}
             onPointerUp={(e) => {
-              send({ action: "seek", seconds: Number(e.currentTarget.value), relative: false });
+              seekTo(Number(e.currentTarget.value));
               setDragging(null);
             }}
             onKeyUp={(e) => {
               if (dragging != null) {
-                send({ action: "seek", seconds: Number(e.currentTarget.value), relative: false });
+                seekTo(Number(e.currentTarget.value));
                 setDragging(null);
               }
             }}
@@ -186,17 +322,17 @@ export default function Controls() {
           </button>
           <button
             className="icon"
-            onClick={() => send({ action: "seek", seconds: -10, relative: true })}
-            aria-label="Back 10 seconds"
+            onClick={() => skip(-SKIP_SECONDS)}
+            aria-label={`Back ${SKIP_SECONDS} seconds`}
           >
-            ↺10
+            ↺{SKIP_SECONDS}
           </button>
           <button
             className="icon"
-            onClick={() => send({ action: "seek", seconds: 30, relative: true })}
-            aria-label="Forward 30 seconds"
+            onClick={() => skip(SKIP_SECONDS)}
+            aria-label={`Forward ${SKIP_SECONDS} seconds`}
           >
-            30↻
+            {SKIP_SECONDS}↻
           </button>
           <button
             className="icon"
@@ -215,30 +351,96 @@ export default function Controls() {
             aria-label="Volume"
           />
           <span className="grow" />
-          {audioTracks.length > 1 && (
-            <select
-              value={audioTracks.find((t) => t.selected)?.id ?? ""}
-              onChange={(e) => send({ action: "setAudioTrack", id: Number(e.target.value) })}
-              aria-label="Audio track"
-            >
-              {audioTracks.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          )}
-          <select
-            value={state?.speed ?? 1}
-            onChange={(e) => send({ action: "setSpeed", speed: Number(e.target.value) })}
-            aria-label="Playback speed"
-          >
-            {SPEEDS.map((s) => (
-              <option key={s} value={s}>
-                {s === 1 ? "Normal speed" : `${s}×`}
-              </option>
-            ))}
-          </select>
+
+          <Menu
+            name="audio"
+            label={`Audio: ${currentAudio ? shortLabel(currentAudio.label) : "–"}`}
+            open={menu === "audio"}
+            onToggle={toggleMenu}
+            sections={[
+              {
+                empty: "No audio tracks yet",
+                options: audioTracks.map((t) => ({
+                  key: String(t.id),
+                  label: t.label,
+                  selected: t.selected,
+                  onSelect: () => choose({ action: "setAudioTrack", id: t.id }),
+                })),
+              },
+            ]}
+          />
+          <Menu
+            name="subtitles"
+            label={`Subtitles: ${currentSub ? shortLabel(currentSub) : "Off"}`}
+            open={menu === "subtitles"}
+            onToggle={toggleMenu}
+            sections={[
+              {
+                options: [
+                  {
+                    key: "off",
+                    label: "Off",
+                    selected: subtitlesOff,
+                    onSelect: () => choose({ action: "setSubtitle", track: null, key: null }),
+                  },
+                ],
+              },
+              {
+                heading: "In the video file",
+                empty: "None",
+                options: embeddedSubs.map((t) => ({
+                  key: `t${t.id}`,
+                  label: t.label,
+                  selected: t.selected,
+                  onSelect: () => choose({ action: "setSubtitle", track: t.id, key: null }),
+                })),
+              },
+              {
+                heading: "From your addons",
+                empty: "None found (yet)",
+                options: addonSubs.map((s) => ({
+                  key: s.key,
+                  label: s.label,
+                  detail: s.addonName,
+                  selected: s.selected,
+                  onSelect: () => choose({ action: "setSubtitle", track: null, key: s.key }),
+                })),
+              },
+            ]}
+          />
+          <Menu
+            name="source"
+            label="Source"
+            open={menu === "source"}
+            onToggle={toggleMenu}
+            sections={[
+              {
+                heading: "Streams, best first",
+                options: sources.map((label, i) => ({
+                  key: String(i),
+                  label: `${i + 1}. ${label}`,
+                  selected: i === state?.sourceIndex,
+                  onSelect: () => choose({ action: "setSource", index: i }),
+                })),
+              },
+            ]}
+          />
+          <Menu
+            name="speed"
+            label={speed === 1 ? "Speed" : `${speed}×`}
+            open={menu === "speed"}
+            onToggle={toggleMenu}
+            sections={[
+              {
+                options: SPEEDS.map((s) => ({
+                  key: String(s),
+                  label: s === 1 ? "Normal" : `${s}×`,
+                  selected: Math.abs(s - speed) < 0.01,
+                  onSelect: () => choose({ action: "setSpeed", speed: s }),
+                })),
+              },
+            ]}
+          />
           <button
             className="icon"
             onClick={() => send({ action: "toggleFullscreen" })}
@@ -250,4 +452,9 @@ export default function Controls() {
       </div>
     </div>
   );
+}
+
+/** The part of a track label before any details in brackets, to keep the bar short. */
+function shortLabel(label: string) {
+  return label.replace(/\s*\(.*\)$/, "");
 }

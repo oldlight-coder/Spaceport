@@ -4,3 +4,4 @@ pub mod catalog;
 pub mod library;
 pub mod meta;
 pub mod streams;
+pub mod subtitles;

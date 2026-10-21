@@ -77,7 +77,7 @@ function Details({ meta }: { meta: MetaDetails }) {
     }
     setNotice({ text: `Starting ${candidates[0].label}…` });
     try {
-      await openPlayer(candidates, fullTitle(target.heading));
+      await openPlayer(candidates, fullTitle(target.heading), meta.type, target.videoId);
     } catch (e) {
       setNotice({ text: String(e), error: true });
     }

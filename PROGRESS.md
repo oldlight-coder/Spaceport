@@ -71,6 +71,10 @@ pass on Windows. The owner tests each milestone before the next one starts.
   (subtitle style, auto-skip, cache size) to this page.
 - 2026-10-20: Profile picture added at the owner's request (not in SPEC). Chosen from a local
   image, shrunk to 128 px and stored only in the local settings file; never uploaded.
+- 2026-10-21: At the owner's request, part of M6's subtitle item is brought into M4's controls:
+  choosing embedded subtitle tracks and subtitles from addons (the protocol's `subtitles`
+  resource) in the player. Local subtitle files and delay/style controls stay in M6. The player
+  also gained a Source menu to switch between the ranked streams while watching.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -135,3 +139,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   window owned by the main window sits over the video with title, seek bar, play/pause, ±10/30 s,
   volume/mute, audio track, speed and fullscreen; keyboard shortcuts; auto-hide. mpv's own
   controls and key bindings are off. player/state.rs parses mpv's track list (tests).
+
+- 2026-10-21: Controls feedback from owner: skips are both 10 s; Audio, Subtitles (off / in file /
+  addons), Source and Speed menus; preferred audio languages passed to mpv (alang); the seek bar
+  holds the chosen point and shows "Seeking…" until playback gets there, and warns when a stream
+  cannot seek beyond what has loaded. Addon subtitles fetched in parallel (stremio/subtitles.rs).
