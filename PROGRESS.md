@@ -78,11 +78,9 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [ ] Skeleton loading placeholders
 - **Acceptance:** every screen reads well in light and dark mode with a few accent colors.
 
-## M11. Ratings
-- [ ] Source to be chosen by the owner (see Decisions)
-
-## M12. Android
-- [ ] Scope to be agreed with the owner before work starts
+## Deferred (owner's choice, 2026-10-21)
+- Ratings beyond IMDb (Rotten Tomatoes via MDBList or OMDb)
+- Android version
 
 ## Decisions
 (Record any spec changes agreed with the owner here.)
@@ -111,6 +109,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-21: Player skip keys stay at 10 s for J/L and the arrows (owner's choice).
 - 2026-10-21: Android: the owner wants Spaceport to run on Android. It is a large port (player,
   secret storage and windows are Windows-specific), so it comes last as M12 with its own scope.
+- 2026-10-21: Ratings beyond IMDb and the Android version are deferred (owner's choice); they
+  moved out of the milestone list to "Deferred".
 
 ## Log
 (One line per finished item: date, item, commit.)
