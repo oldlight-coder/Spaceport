@@ -191,3 +191,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   IMDb series with an Animation genre, an AniList search that must match the title (and season);
   skip times fetched with the episode length; Skip Intro/Outro/Recap button and an auto-skip
   switch in Settings > Anime. aniskip.rs parsing and matching have unit tests. M7 code complete.
+- 2026-10-21: AniSkip fix after "no button for Frieren": requests now send a User-Agent, AniList
+  is also searched with the name before ":", and when no skip times load the player top bar says
+  where the lookup stopped ("AniSkip: ..."). Tests for both cases.

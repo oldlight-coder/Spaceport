@@ -431,6 +431,9 @@ export default function Controls() {
         <div>
           <div className="title">{state?.title ?? "Spaceport"}</div>
           {state?.stream && <div className="stream">{state.stream}</div>}
+          {state && state.skips.length === 0 && state.skipNote && (
+            <div className="stream">AniSkip: {state.skipNote}</div>
+          )}
         </div>
       </div>
 

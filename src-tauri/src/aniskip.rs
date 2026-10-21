@@ -210,69 +210,109 @@ pub fn parse_skip_times(body: &Value) -> Vec<SkipSegment> {
 /// Looks up MyAnimeList ids once per show and fetches skip times.
 #[derive(Default)]
 pub struct AniSkip {
-    mal_ids: Mutex<HashMap<String, Option<u64>>>,
+    /// Definite answers per show: the id, or why there is none. Network errors are not kept.
+    mal_ids: Mutex<HashMap<String, Result<u64, String>>>,
+}
+
+/// Why a lookup stopped, worded for the player's status line.
+fn unreachable(service: &str, error: impl std::fmt::Display) -> String {
+    format!("could not reach {service} ({error})")
+}
+
+/// Names to search AniList with: the full name, then the part before a colon
+/// ("Frieren: Beyond Journey's End" also tries "Frieren").
+fn search_names(name: &str, season: u32) -> Vec<String> {
+    let mut names = vec![name.trim().to_string()];
+    if let Some((short, _)) = name.split_once(':') {
+        if !short.trim().is_empty() {
+            names.push(short.trim().to_string());
+        }
+    }
+    if season > 1 {
+        names = names.into_iter().map(|n| format!("{n} {season}")).collect();
+    }
+    names
 }
 
 impl AniSkip {
-    async fn mal_id(&self, api: &StremioApi, anime: &AnimeRef) -> Option<u64> {
+    async fn mal_id(&self, api: &StremioApi, anime: &AnimeRef) -> Result<u64, String> {
         let key = anime.cache_key();
         if let Some(known) = self.mal_ids.lock().unwrap().get(&key) {
-            return *known;
+            return known.clone();
         }
-        let found = match anime {
-            AnimeRef::Mal { id, .. } => Some(*id),
+        let found: Result<u64, String> = match anime {
+            AnimeRef::Mal { id, .. } => Ok(*id),
             AnimeRef::Kitsu { id, .. } => {
                 let url = format!("{KITSU_API}/anime/{id}/mappings");
-                let body = api.service_get(&url, TIMEOUT).await.ok()?;
-                body.as_ref().and_then(mal_from_kitsu)
+                let body = api
+                    .service_get(&url, TIMEOUT)
+                    .await
+                    .map_err(|e| unreachable("Kitsu", e))?;
+                body.as_ref()
+                    .and_then(mal_from_kitsu)
+                    .ok_or_else(|| format!("Kitsu has no MyAnimeList link for kitsu:{id}"))
             }
             AnimeRef::Anilist { id, .. } => {
                 let query = json!({
                     "query": "query($id:Int){Media(id:$id,type:ANIME){idMal}}",
                     "variables": { "id": id }
                 });
-                let body = api.service_post(ANILIST_API, &query, TIMEOUT).await.ok()?;
+                let body = api
+                    .service_post(ANILIST_API, &query, TIMEOUT)
+                    .await
+                    .map_err(|e| unreachable("AniList", e))?;
                 mal_from_anilist_id(&body)
+                    .ok_or_else(|| format!("AniList has no MyAnimeList id for anilist:{id}"))
             }
             AnimeRef::Named { name, season, .. } => {
-                let search = if *season == 1 {
-                    name.clone()
-                } else {
-                    format!("{name} {season}")
-                };
-                let query = json!({
-                    "query": "query($s:String){Page(perPage:10){media(search:$s,type:ANIME){idMal title{romaji english native} synonyms}}}",
-                    "variables": { "s": search }
-                });
-                let body = api.service_post(ANILIST_API, &query, TIMEOUT).await.ok()?;
-                mal_from_anilist_search(&body, name, *season)
+                let mut found = None;
+                for search in search_names(name, *season) {
+                    let query = json!({
+                        "query": "query($s:String){Page(perPage:10){media(search:$s,type:ANIME){idMal title{romaji english native} synonyms}}}",
+                        "variables": { "s": search }
+                    });
+                    let body = api
+                        .service_post(ANILIST_API, &query, TIMEOUT)
+                        .await
+                        .map_err(|e| unreachable("AniList", e))?;
+                    found = mal_from_anilist_search(&body, name, *season);
+                    if found.is_some() {
+                        break;
+                    }
+                }
+                found.ok_or_else(|| format!("AniList has no show named \"{name}\" season {season}"))
             }
         };
-        // Remember misses too, so a show with no match is not searched every episode. Network
-        // errors returned early above and are tried again next time.
-        self.mal_ids.lock().unwrap().insert(key, found);
+        self.mal_ids.lock().unwrap().insert(key, found.clone());
         found
     }
 
     /// Skip times for one episode. `episode_length` (seconds) lets AniSkip pick timings that
-    /// fit this release; 0 when unknown.
+    /// fit this release; 0 when unknown. The error says where the lookup stopped.
     pub async fn skip_times(
         &self,
         api: &StremioApi,
         anime: &AnimeRef,
         episode_length: f64,
-    ) -> Vec<SkipSegment> {
-        let Some(mal) = self.mal_id(api, anime).await else {
-            return Vec::new();
-        };
+    ) -> Result<Vec<SkipSegment>, String> {
+        let mal = self.mal_id(api, anime).await?;
         let url = format!(
             "{ANISKIP_API}/{mal}/{}?types[]=op&types[]=ed&types[]=mixed-op&types[]=mixed-ed&types[]=recap&episodeLength={}",
             anime.episode(),
             episode_length.max(0.0).round() as u64
         );
-        match api.service_get(&url, TIMEOUT).await {
-            Ok(Some(body)) => parse_skip_times(&body),
-            _ => Vec::new(),
+        let body = api
+            .service_get(&url, TIMEOUT)
+            .await
+            .map_err(|e| unreachable("AniSkip", e))?;
+        let segments = body.as_ref().map(parse_skip_times).unwrap_or_default();
+        if segments.is_empty() {
+            Err(format!(
+                "no skip times for episode {} yet (MyAnimeList {mal})",
+                anime.episode()
+            ))
+        } else {
+            Ok(segments)
         }
     }
 }
@@ -411,6 +451,26 @@ mod tests {
         assert_eq!(
             mal_from_anilist_search(&search_body(), "The Simpsons", 1),
             None
+        );
+    }
+
+    #[test]
+    fn searches_full_and_short_names() {
+        assert_eq!(
+            search_names("Frieren: Beyond Journey's End", 1),
+            ["Frieren: Beyond Journey's End", "Frieren"]
+        );
+        assert_eq!(search_names("Attack on Titan", 2), ["Attack on Titan 2"]);
+    }
+
+    #[test]
+    fn frieren_matches_its_english_title() {
+        let body = json!({"data": {"Page": {"media": [
+            {"idMal": 52991, "title": {"romaji": "Sousou no Frieren", "english": "Frieren: Beyond Journey\u{2019}s End", "native": null}, "synonyms": ["Frieren at the Funeral"]}
+        ]}}});
+        assert_eq!(
+            mal_from_anilist_search(&body, "Frieren: Beyond Journey's End", 1),
+            Some(52991)
         );
     }
 

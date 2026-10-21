@@ -90,7 +90,9 @@ pub struct StremioApi {
 
 impl StremioApi {
     pub fn new(base_url: impl Into<String>) -> Self {
+        // Some services (behind Cloudflare) refuse requests that do not name their client.
         let http = reqwest::Client::builder()
+            .user_agent(concat!("Spaceport/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(20))
             .build()
             .expect("failed to build HTTP client");
@@ -210,12 +212,13 @@ impl StremioApi {
             .send()
             .await
             .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        let response = response
-            .error_for_status()
-            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+        if !status.is_success() {
+            return Err(ApiError::Transport(format!("HTTP {status}")));
+        }
         response
             .json()
             .await
@@ -238,8 +241,11 @@ impl StremioApi {
             .timeout(timeout)
             .send()
             .await
-            .and_then(|r| r.error_for_status())
             .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(ApiError::Transport(format!("HTTP {status}")));
+        }
         response
             .json()
             .await

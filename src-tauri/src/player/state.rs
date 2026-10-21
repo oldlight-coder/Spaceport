@@ -65,6 +65,8 @@ pub struct PlaybackState {
     pub skips: Vec<SkipSegment>,
     /// Skip them without asking.
     pub auto_skip: bool,
+    /// Why an anime has no skip times, shown in the player so a failed lookup is visible.
+    pub skip_note: Option<String>,
     /// The next episode's label ("S1 E3 · Title"), when there is one to count down to.
     pub next_up: Option<String>,
     /// The position playback resumed from, if it did not start at the beginning.

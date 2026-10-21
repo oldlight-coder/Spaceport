@@ -38,6 +38,8 @@ export interface PlaybackState {
   /** Anime intro, outro and recap times. */
   skips: SkipSegment[];
   autoSkip: boolean;
+  /** Why an anime has no skip times, when the lookup stopped somewhere. */
+  skipNote: string | null;
   /** The next episode's label, when there is one to count down to. */
   nextUp: string | null;
   /** Where playback resumed, when it did not start at the beginning. */

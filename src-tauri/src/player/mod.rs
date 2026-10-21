@@ -291,6 +291,7 @@ impl Player {
                 state.next_up = next_up;
                 state.auto_skip = auto_skip;
                 state.skips.clear();
+                state.skip_note = None;
                 state.set_addon_subtitles(Vec::new());
             }
             existing.mpv.set_property("force-media-title", title)?;
@@ -459,14 +460,29 @@ impl Player {
         self.state().map(|s| s.duration).filter(|d| *d > 0.0)
     }
 
-    /// Shows skip buttons for `video_id`, unless another video has started meanwhile.
-    pub fn set_skips(&self, app: &AppHandle, video_id: &str, skips: Vec<SkipSegment>) {
+    /// Shows skip buttons for `video_id` (or why there are none), unless another video has
+    /// started meanwhile.
+    pub fn set_skips(
+        &self,
+        app: &AppHandle,
+        video_id: &str,
+        skips: Result<Vec<SkipSegment>, String>,
+    ) {
         if self.current_video().as_deref() != Some(video_id) {
             return;
         }
         if let Some(session) = self.session.lock().unwrap().as_ref() {
             let mut state = session.state.lock().unwrap();
-            state.skips = skips;
+            match skips {
+                Ok(skips) => {
+                    state.skips = skips;
+                    state.skip_note = None;
+                }
+                Err(note) => {
+                    state.skips.clear();
+                    state.skip_note = Some(note);
+                }
+            }
             let _ = app.emit("player-state", state.clone());
         }
     }
