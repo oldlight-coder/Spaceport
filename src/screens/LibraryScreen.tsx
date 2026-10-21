@@ -9,6 +9,43 @@ const ORDER = ["series", "movie"];
 const HEADINGS: Record<string, string> = { movie: "Movies", series: "Series" };
 const WATCHING = "watching";
 const TAB_KEY = "spaceport.libraryTab";
+const SORT_KEY = "spaceport.librarySort";
+
+const SORTS = {
+  watched: "Recently watched",
+  added: "Recently added",
+  name: "Name",
+} as const;
+type Sort = keyof typeof SORTS;
+
+interface Sortable {
+  name: string;
+  /** Milliseconds since 1970. */
+  added: number;
+  lastWatched: number | null;
+}
+
+const millis = (iso: string | null | undefined) => {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isNaN(t) ? null : t;
+};
+
+/** Newest first for the dates; titles never watched go after the watched ones, newest added
+ * first. */
+function sortBy<T>(list: T[], sort: Sort, key: (item: T) => Sortable) {
+  const byAdded = (a: Sortable, b: Sortable) => b.added - a.added;
+  const compare = (a: Sortable, b: Sortable) => {
+    if (sort === "name") return a.name.localeCompare(b.name);
+    if (sort === "added") return byAdded(a, b);
+    if (a.lastWatched !== b.lastWatched) {
+      if (a.lastWatched == null) return 1;
+      if (b.lastWatched == null) return -1;
+      return b.lastWatched - a.lastWatched;
+    }
+    return byAdded(a, b);
+  };
+  return [...list].sort((a, b) => compare(key(a), key(b)));
+}
 
 /** Library items grouped by type, keeping the library's order inside each group. */
 function byType(items: LibraryItem[]) {
@@ -28,11 +65,19 @@ function byType(items: LibraryItem[]) {
     }));
 }
 
-function readTab() {
+function read(key: string) {
   try {
-    return localStorage.getItem(TAB_KEY);
+    return localStorage.getItem(key);
   } catch {
     return null;
+  }
+}
+
+function remember(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Only remembered when storage works.
   }
 }
 
@@ -40,16 +85,36 @@ function readTab() {
 export default function LibraryScreen() {
   const [library, reload] = useLoad(listLibrary);
   const watching = useWatching();
-  const [tab, setTab] = useState(readTab);
+  const [tab, setTab] = useState(() => read(TAB_KEY));
+  const [sort, setSort] = useState<Sort>(() => {
+    const saved = read(SORT_KEY);
+    return saved && saved in SORTS ? (saved as Sort) : "watched";
+  });
 
   function choose(next: string) {
     setTab(next);
-    try {
-      localStorage.setItem(TAB_KEY, next);
-    } catch {
-      // The tab is only remembered when storage works.
-    }
+    remember(TAB_KEY, next);
   }
+
+  function chooseSort(next: Sort) {
+    setSort(next);
+    remember(SORT_KEY, next);
+  }
+
+  const inLibrary = new Map(
+    (library.status === "ready" ? library.data : []).map((i) => [i.id, i]),
+  );
+  const libraryKey = (item: LibraryItem): Sortable => ({
+    name: item.name || item.id,
+    added: millis(item.added) ?? 0,
+    lastWatched: millis(item.lastWatched),
+  });
+  // A marked title's date added is when it was marked; its last watch comes from the library.
+  const watchingSorted = sortBy(watching, sort, (item) => ({
+    name: item.name,
+    added: item.since ?? 0,
+    lastWatched: millis(inLibrary.get(item.id)?.lastWatched),
+  }));
 
   const groups = library.status === "ready" ? byType(library.data) : [];
   const tabs = [
@@ -65,18 +130,31 @@ export default function LibraryScreen() {
   return (
     <section>
       <h2>Library</h2>
-      <div className="chip-group library-tabs" role="tablist" aria-label="Library">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            role="tab"
-            aria-selected={t.key === current}
-            className={t.key === current ? "chip active" : "chip"}
-            onClick={() => choose(t.key)}
-          >
-            {t.label} <span className="muted">{t.count}</span>
-          </button>
-        ))}
+      <div className="library-bar">
+        <div className="chip-group" role="tablist" aria-label="Library">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={t.key === current}
+              className={t.key === current ? "chip active" : "chip"}
+              onClick={() => choose(t.key)}
+            >
+              {t.label} <span className="muted">{t.count}</span>
+            </button>
+          ))}
+        </div>
+        <select
+          value={sort}
+          onChange={(e) => chooseSort(e.target.value as Sort)}
+          aria-label="Sort library"
+        >
+          {(Object.keys(SORTS) as Sort[]).map((key) => (
+            <option key={key} value={key}>
+              {SORTS[key]}
+            </option>
+          ))}
+        </select>
       </div>
       {current === WATCHING ? (
         watching.length === 0 ? (
@@ -85,7 +163,7 @@ export default function LibraryScreen() {
           </p>
         ) : (
           <ul className="poster-grid">
-            {watching.map((item) => (
+            {watchingSorted.map((item) => (
               <PosterCard
                 key={item.id}
                 name={item.name}
@@ -101,7 +179,7 @@ export default function LibraryScreen() {
         <LoadableList state={library} onRetry={reload} empty="Your library is empty.">
           {() => (
             <ul className="poster-grid">
-              {(group?.items ?? []).map((item) => (
+              {sortBy(group?.items ?? [], sort, libraryKey).map((item) => (
                 <PosterCard
                   key={item.id}
                   name={item.name || item.id}

@@ -71,6 +71,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Mark titles as "Watching" from their page
 - [x] Player keys work from any Spaceport window (J/K/L, arrows, volume)
 - [ ] New-episode badges on series posters and "New" tags on episodes
+- [ ] Library sort: recently watched (default), recently added, name
 - **Acceptance:** each item works in the installed app.
 
 ## M10. Look and feel
@@ -256,3 +257,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   it came out after the series was last watched (Stremio's lastWatched, or the Watching mark's
   time) and is not marked watched. Checked for library, Continue Watching and Watching series;
   details cached 3 h. Posters show "New episode"/"N new episodes", episode lists a "New" tag.
+- 2026-10-21: Library sort menu (owner's request): recently watched (Stremio's lastWatched; never
+  watched after, newest added first), recently added (_ctime; for Watching marks the mark time)
+  and name. The choice is remembered.

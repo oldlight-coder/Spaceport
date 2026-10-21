@@ -57,7 +57,7 @@ or hosted services of its own.
 - Continue Watching: remove one title or clear the whole row.
 - Search history: recent searches, each removable, with a Clear all.
 - Library in tabs: Watching, Movies and Series. Titles can be marked "Watching" from their
-  page; the mark is kept on this computer.
+  page; the mark is kept on this computer. Sorted by recently watched, recently added or name.
 - New episodes: series in the library, Continue Watching or marked Watching show a badge when
   an episode came out since they were last watched; the episode list tags the new ones.
 - Player keys: J/Left back 10 s, K/Space pause, L/Right forward 10 s, Up/Down volume; they work

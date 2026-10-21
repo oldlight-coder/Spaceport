@@ -23,6 +23,11 @@ pub struct RawLibraryItem {
     /// Last modification time as an ISO 8601 string.
     #[serde(rename = "_mtime", default)]
     pub mtime: String,
+    /// When the title was first stored, as an ISO 8601 string.
+    #[serde(rename = "_ctime", default)]
+    pub ctime: Option<Value>,
+    #[serde(default)]
+    pub state: Option<Value>,
 }
 
 /// A library title as the UI sees it.
@@ -34,6 +39,18 @@ pub struct LibraryItem {
     #[serde(rename = "type")]
     pub kind: String,
     pub poster: Option<String>,
+    /// When it was added (ISO 8601), for sorting by date added.
+    pub added: String,
+    /// When it was last watched (ISO 8601), if ever.
+    pub last_watched: Option<String>,
+}
+
+/// An ISO 8601 time stored as a non-empty string; Stremio sometimes stores null instead.
+fn time(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .filter(|t| !t.trim().is_empty())
+        .map(str::to_string)
 }
 
 /// Keeps the titles that are really in the library, most recently changed first. Entries that
@@ -52,6 +69,8 @@ pub fn visible_items(stored: &[Value]) -> Vec<LibraryItem> {
             name: item.name,
             kind: item.kind,
             poster: item.poster.filter(|p| !p.trim().is_empty()),
+            added: time(item.ctime.as_ref()).unwrap_or_else(|| item.mtime.clone()),
+            last_watched: time(item.state.as_ref().and_then(|s| s.get("lastWatched"))),
         })
         .collect()
 }
@@ -80,6 +99,24 @@ mod tests {
         let items = visible_items(&raw);
         let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
         assert_eq!(ids, ["tt0903747", "tt0111161", "kitsu:1"]);
+    }
+
+    #[test]
+    fn reads_added_and_last_watched_times() {
+        let raw = serde_json::json!([
+            {"_id": "a", "_ctime": "2024-01-01T10:00:00.000Z", "_mtime": "2024-03-01T10:00:00.000Z",
+             "state": {"lastWatched": "2024-02-01T10:00:00.000Z"}},
+            {"_id": "b", "_mtime": "2024-04-01T10:00:00.000Z", "state": {"lastWatched": null}}
+        ]);
+        let items = visible_items(raw.as_array().unwrap());
+        assert_eq!(items[1].added, "2024-01-01T10:00:00.000Z");
+        assert_eq!(
+            items[1].last_watched.as_deref(),
+            Some("2024-02-01T10:00:00.000Z")
+        );
+        // Without a creation time the last change stands in.
+        assert_eq!(items[0].added, "2024-04-01T10:00:00.000Z");
+        assert_eq!(items[0].last_watched, None);
     }
 
     #[test]
