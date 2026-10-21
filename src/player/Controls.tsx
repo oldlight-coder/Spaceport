@@ -537,15 +537,17 @@ export default function Controls() {
             className="icon"
             onClick={() => skip(-SKIP_SECONDS)}
             aria-label={`Back ${SKIP_SECONDS} seconds`}
+            title={`Back ${SKIP_SECONDS} s (J or ←)`}
           >
-            ↺{SKIP_SECONDS}
+            ↺
           </button>
           <button
             className="icon"
             onClick={() => skip(SKIP_SECONDS)}
             aria-label={`Forward ${SKIP_SECONDS} seconds`}
+            title={`Forward ${SKIP_SECONDS} s (L or →)`}
           >
-            {SKIP_SECONDS}↻
+            ↻
           </button>
           <button
             className="icon"

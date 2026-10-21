@@ -294,3 +294,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
   Enter crash, error screen, play/load races, stable player keys, size field, settings merges),
   build (libmpv DLL hash pinned and checked before bundling). 197 tests pass.
 - 2026-10-21: While a video is open the page behind it is blurred and dimmed (owner's request), so nothing shows through before the first frame or during a stream switch.
+- 2026-10-21: Player skip buttons show only arrows (owner's request); the amount and keys are in their tooltips.
