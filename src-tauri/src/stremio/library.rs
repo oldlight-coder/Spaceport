@@ -1,6 +1,7 @@
 //! The user's Stremio library, stored in the `libraryItem` datastore collection.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// A library entry as Stremio stores it. Only the fields Spaceport reads are listed.
 #[derive(Debug, Clone, Deserialize)]
@@ -35,8 +36,13 @@ pub struct LibraryItem {
     pub poster: Option<String>,
 }
 
-/// Keeps the titles that are really in the library, most recently changed first.
-pub fn visible_items(mut raw: Vec<RawLibraryItem>) -> Vec<LibraryItem> {
+/// Keeps the titles that are really in the library, most recently changed first. Entries that
+/// cannot be read are skipped.
+pub fn visible_items(stored: &[Value]) -> Vec<LibraryItem> {
+    let mut raw: Vec<RawLibraryItem> = stored
+        .iter()
+        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+        .collect();
     raw.retain(|item| !item.removed && !item.temp);
     // ISO 8601 timestamps in the same format sort correctly as strings.
     raw.sort_by(|a, b| b.mtime.cmp(&a.mtime));
@@ -70,16 +76,16 @@ mod tests {
 
     #[test]
     fn filters_removed_and_temp_and_sorts_newest_first() {
-        let raw: Vec<RawLibraryItem> = serde_json::from_str(SAMPLE).unwrap();
-        let items = visible_items(raw);
+        let raw: Vec<Value> = serde_json::from_str(SAMPLE).unwrap();
+        let items = visible_items(&raw);
         let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
         assert_eq!(ids, ["tt0903747", "tt0111161", "kitsu:1"]);
     }
 
     #[test]
     fn empty_poster_becomes_none() {
-        let raw: Vec<RawLibraryItem> = serde_json::from_str(SAMPLE).unwrap();
-        let items = visible_items(raw);
+        let raw: Vec<Value> = serde_json::from_str(SAMPLE).unwrap();
+        let items = visible_items(&raw);
         assert_eq!(items[0].poster, None);
         assert_eq!(
             items[1].poster.as_deref(),

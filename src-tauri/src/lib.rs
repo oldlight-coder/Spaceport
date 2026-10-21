@@ -1,6 +1,7 @@
 mod auth;
 mod language;
 mod player;
+mod progress;
 mod ranking;
 mod secrets;
 mod settings;
@@ -33,6 +34,10 @@ pub(crate) struct AppState {
     settings_store: SettingsStore,
     player: player::Player,
     torrents: Arc<torrent::TorrentEngine>,
+    /// Positions of every video watched, kept on this computer.
+    resume: progress::ResumeStore,
+    /// One progress save at a time, so two saves of the same title never race.
+    progress_lock: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -143,7 +148,7 @@ async fn library_list(state: tauri::State<'_, AppState>) -> Result<Vec<LibraryIt
         .library_items(&key)
         .await
         .map_err(|e| e.to_string())?;
-    Ok(visible_items(raw))
+    Ok(visible_items(&raw))
 }
 
 #[tauri::command]
@@ -319,9 +324,10 @@ async fn player_open(
     app: tauri::AppHandle,
     candidates: Vec<PlayCandidate>,
     title: String,
-    kind: String,
+    item: progress::TitleInfo,
     video_id: String,
 ) -> Result<(), String> {
+    let kind = item.kind.clone();
     let engine = app.state::<AppState>().torrents.clone();
     let mut playable = Vec::new();
     for candidate in candidates {
@@ -349,11 +355,18 @@ async fn player_open(
         subtitle_languages: language::mpv_list(&settings.subtitle_languages),
         subtitle_style: settings.subtitle_style.clone(),
     };
+    let start = resume_position(&app, &item.id, &video_id).await;
+    let target = player::WatchTarget {
+        title: item,
+        video_id: video_id.clone(),
+    };
     let (sender, receiver) = std::sync::mpsc::channel();
     let handle = app.clone();
     app.run_on_main_thread(move || {
         let state = handle.state::<AppState>();
-        let result = state.player.open(&handle, candidates, &title, &prefs);
+        let result = state
+            .player
+            .open(&handle, candidates, &title, &prefs, target, start);
         let _ = sender.send(result);
     })
     .map_err(|e| e.to_string())?;
@@ -388,6 +401,102 @@ async fn player_open(
         state.player.set_addon_subtitles(&handle, ordered);
     });
     Ok(())
+}
+
+/// Where to resume a video: the newer of this computer's position and the one in the Stremio
+/// library (which may come from another device). Stremio is not waited on for long, so being
+/// offline does not hold up playback.
+async fn resume_position(app: &tauri::AppHandle, title_id: &str, video_id: &str) -> Option<f64> {
+    let state = app.state::<AppState>();
+    let local = state.resume.load().get(video_id).copied();
+    let remote = async {
+        let key = state.auth_key().ok()?;
+        let item = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            state.api.library_item(&key, title_id),
+        )
+        .await
+        .ok()?
+        .ok()??;
+        let s = item.get("state")?;
+        if s.get("video_id").and_then(Value::as_str) != Some(video_id) {
+            return None;
+        }
+        let ms = |k: &str| s.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+        Some(progress::VideoProgress {
+            position: ms("timeOffset") / 1000.0,
+            duration: ms("duration") / 1000.0,
+            updated: s
+                .get("lastWatched")
+                .and_then(Value::as_str)
+                .and_then(progress::parse_iso_millis)
+                .unwrap_or(0),
+        })
+    }
+    .await;
+    let newest = match (local, remote) {
+        (Some(l), Some(r)) => Some(if r.updated > l.updated { r } else { l }),
+        (l, r) => l.or(r),
+    }?;
+    progress::resume_point(newest.position, newest.duration)
+}
+
+/// Saves a progress report on this computer and in the Stremio library item of the title.
+async fn save_progress(app: tauri::AppHandle, report: player::WatchReport) {
+    let state = app.state::<AppState>();
+    let _one_at_a_time = state.progress_lock.lock().await;
+    let position = progress::stored_position(report.position, report.duration, report.finished);
+    let _ = state.resume.update(
+        &report.target.video_id,
+        progress::VideoProgress {
+            position,
+            duration: report.duration,
+            updated: progress::now_millis(),
+        },
+    );
+    let Ok(key) = state.auth_key() else {
+        return;
+    };
+    let now = progress::iso_time(std::time::SystemTime::now());
+    let title = &report.target.title;
+    let mut item = match state.api.library_item(&key, &title.id).await {
+        Ok(Some(item)) => item,
+        Ok(None) => progress::new_library_item(title, &now),
+        // Offline: the local copy is saved; Stremio gets the next report.
+        Err(_) => return,
+    };
+    progress::apply_progress(
+        &mut item,
+        &report.target.video_id,
+        position,
+        report.duration,
+        report.watched_seconds,
+        &now,
+    );
+    let _ = state.api.put_library_items(&key, &[item]).await;
+}
+
+/// The Continue Watching row: titles started and not finished, from the Stremio library.
+#[tauri::command]
+async fn continue_watching(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<progress::ContinueItem>, String> {
+    let key = state.auth_key()?;
+    let items = state
+        .api
+        .library_items(&key)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(progress::continue_watching(&items))
+}
+
+/// Saved positions of every video of a title, for progress bars on the details page.
+#[tauri::command]
+fn title_progress(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> std::collections::HashMap<String, progress::VideoProgress> {
+    state.resume.for_title(&id)
 }
 
 #[tauri::command]
@@ -508,7 +617,16 @@ pub fn run() {
                 settings_store,
                 player: player::Player::default(),
                 torrents,
+                resume: progress::ResumeStore::new(&config_dir),
+                progress_lock: tokio::sync::Mutex::new(()),
             });
+            let handle = app.handle().clone();
+            app.state::<AppState>()
+                .player
+                .set_reporter(Arc::new(move |report| {
+                    let handle = handle.clone();
+                    tauri::async_runtime::spawn(save_progress(handle, report));
+                }));
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -549,7 +667,9 @@ pub fn run() {
             player_close,
             player_control,
             player_state,
-            player_load_subtitle
+            player_load_subtitle,
+            continue_watching,
+            title_progress
         ])
         .build(tauri::generate_context!())
         .expect("error while building Spaceport")

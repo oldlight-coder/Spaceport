@@ -60,6 +60,8 @@ pub struct PlaybackState {
     pub sub_delay: f64,
     /// Subtitle size relative to the default.
     pub sub_scale: f64,
+    /// The position playback resumed from, if it did not start at the beginning.
+    pub resumed_from: Option<f64>,
     /// Labels of the streams that can be switched to, best first.
     pub sources: Vec<String>,
     pub source_index: usize,

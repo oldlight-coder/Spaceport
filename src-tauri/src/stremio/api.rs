@@ -10,7 +10,6 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 use super::addons::AddonCollection;
-use super::library::RawLibraryItem;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.strem.io";
 
@@ -196,13 +195,37 @@ impl StremioApi {
             .map_err(|_| ApiError::Addon("the addon did not return JSON".to_string()))
     }
 
-    /// Every entry of the library datastore, including removed and temporary ones.
-    pub async fn library_items(&self, auth_key: &str) -> Result<Vec<RawLibraryItem>, ApiError> {
+    /// Every entry of the library datastore, including removed and temporary ones, as stored.
+    pub async fn library_items(&self, auth_key: &str) -> Result<Vec<Value>, ApiError> {
         self.call(
             "datastoreGet",
             json!({ "authKey": auth_key, "collection": "libraryItem", "ids": [], "all": true }),
         )
         .await
+    }
+
+    /// One library entry, if the title has one.
+    pub async fn library_item(&self, auth_key: &str, id: &str) -> Result<Option<Value>, ApiError> {
+        let items: Vec<Value> = self
+            .call(
+                "datastoreGet",
+                json!({ "authKey": auth_key, "collection": "libraryItem", "ids": [id], "all": false }),
+            )
+            .await?;
+        Ok(items
+            .into_iter()
+            .find(|i| i.get("_id").and_then(Value::as_str) == Some(id)))
+    }
+
+    /// Writes library entries back; each replaces the stored entry with the same `_id`.
+    pub async fn put_library_items(&self, auth_key: &str, items: &[Value]) -> Result<(), ApiError> {
+        let _: Value = self
+            .call(
+                "datastorePut",
+                json!({ "authKey": auth_key, "collection": "libraryItem", "changes": items }),
+            )
+            .await?;
+        Ok(())
     }
 }
 

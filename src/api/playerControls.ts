@@ -28,6 +28,8 @@ export interface PlaybackState {
   speed: number;
   seeking: boolean;
   subDelay: number;
+  /** Where playback resumed, when it did not start at the beginning. */
+  resumedFrom: number | null;
   subScale: number;
   seekable: boolean;
   audioTracks: Track[];

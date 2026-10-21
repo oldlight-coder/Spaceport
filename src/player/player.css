@@ -266,3 +266,13 @@ select option {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+
+.resume-toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.resume-toast button {
+  padding: 6px 12px;
+}

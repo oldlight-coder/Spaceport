@@ -43,7 +43,9 @@ The Stremio auth key is stored in the Windows Credential Manager (entry `Spacepo
 non-Windows dev builds an in-memory store is used, so sign-in does not survive a restart there.
 
 Preferences (languages, stream filters, profile picture) are saved in `settings.json` in the app
-config folder (`%APPDATA%\com.spaceport.client` on Windows). It holds no secrets.
+config folder (`%APPDATA%\com.spaceport.client` on Windows). It holds no secrets. The position of
+every video you watch is kept next to it in `resume.json`; the last one per title is also saved
+in your Stremio library, as the official apps do.
 
 Torrents are downloaded to the app cache folder (`%LOCALAPPDATA%\com.spaceport.client\torrents` on
 Windows). Torrents you are not watching are deleted once the cache passes the size set in

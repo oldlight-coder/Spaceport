@@ -42,7 +42,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
   torrent; seeking works; nothing listens on a non-loopback address.
 
 ## M6. Subtitles, resume and progress
-- [ ] Subtitles from addons, embedded tracks and local files; delay and style controls
+- [x] Subtitles from addons, embedded tracks and local files; delay and style controls
 - [ ] Resume position per episode; Continue Watching row
 - [ ] Mark watched / unwatched; progress synced back to Stremio
 - [ ] Next-episode countdown
@@ -168,3 +168,9 @@ pass on Windows. The owner tests each milestone before the next one starts.
   from the computer (file picker), delay -/+0.1 s (also Z/X) and reset, size -/+ in the player;
   Settings > Subtitles for size, colour, outline or box, position (applied live and on start);
   preferred subtitle languages auto-select a track in the file when the audio differs.
+- 2026-10-21: M6 subtitles confirmed by owner on Windows. (3f4b009)
+- 2026-10-21: M6 resume and Continue Watching implemented (not yet ticked: needs a Windows check).
+  Progress is saved every 30 s, on pause, at the end and on close: locally per video
+  (resume.json) and in the title's Stremio library item (video_id, timeOffset/duration in ms,
+  watch time; new titles as temporary entries like the official apps). Playback resumes at the
+  newer of the two with a Start over option; Continue Watching follows Stremio's rules.

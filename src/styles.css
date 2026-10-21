@@ -912,3 +912,29 @@ input[type="range"] {
   accent-color: var(--accent);
   padding: 0;
 }
+
+.progress-bar {
+  display: block;
+  height: 4px;
+  margin-top: -10px;
+  margin-bottom: 6px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.poster-caption {
+  font-size: 12px;
+}
+
+.episode .progress-bar {
+  margin: 8px 0 0;
+  max-width: 260px;
+}

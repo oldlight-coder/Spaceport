@@ -49,15 +49,21 @@ pub struct PlayQueue {
 }
 
 impl PlayQueue {
-    /// Starts with the first candidate. Returns `None` for an empty list.
-    pub fn new(candidates: Vec<Candidate>, now: Instant) -> Option<(Self, Action)> {
+    /// Starts with the first candidate, at `start` seconds when resuming. Returns `None` for an
+    /// empty list.
+    pub fn new(
+        candidates: Vec<Candidate>,
+        now: Instant,
+        start: Option<f64>,
+    ) -> Option<(Self, Action)> {
         let first = candidates.first()?.clone();
         let queue = Self {
             candidates,
             index: 0,
             loaded: false,
             started_at: now,
-            position: None,
+            // A fallback before playback begins still resumes at the same point.
+            position: start,
             duration: None,
         };
         Some((
@@ -65,7 +71,7 @@ impl PlayQueue {
             Action::Load {
                 url: first.url,
                 label: first.label,
-                start: None,
+                start,
             },
         ))
     }
@@ -182,21 +188,38 @@ mod tests {
         }
     }
 
+    impl PlayQueue {
+        fn new_at(candidates: Vec<Candidate>, now: Instant) -> Option<(Self, Action)> {
+            Self::new(candidates, now, None)
+        }
+    }
+
+    #[test]
+    fn resumes_and_falls_back_at_the_resume_point() {
+        let now = Instant::now();
+        let (mut q, first) = PlayQueue::new(candidates(2), now, Some(754.0)).unwrap();
+        assert_eq!(first, load("https://debrid.example/1", Some(754.0)));
+        assert_eq!(
+            q.on_failed("HTTP 404", now),
+            load("https://debrid.example/2", Some(754.0))
+        );
+    }
+
     #[test]
     fn empty_list_plays_nothing() {
-        assert!(PlayQueue::new(vec![], Instant::now()).is_none());
+        assert!(PlayQueue::new(vec![], Instant::now(), None).is_none());
     }
 
     #[test]
     fn starts_with_the_top_candidate() {
-        let (_, action) = PlayQueue::new(candidates(3), Instant::now()).unwrap();
+        let (_, action) = PlayQueue::new_at(candidates(3), Instant::now()).unwrap();
         assert_eq!(action, load("https://debrid.example/1", None));
     }
 
     #[test]
     fn failure_before_start_moves_to_next_from_the_beginning() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(3), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(3), now).unwrap();
         assert_eq!(
             q.on_failed("HTTP 404", now),
             load("https://debrid.example/2", None)
@@ -207,7 +230,7 @@ mod tests {
     #[test]
     fn failure_mid_playback_resumes_at_same_position() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(2), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(2), now).unwrap();
         q.on_loaded();
         q.on_duration(5400.0);
         q.on_position(1234.5);
@@ -220,7 +243,7 @@ mod tests {
     #[test]
     fn gives_up_after_the_last_candidate() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(2), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(2), now).unwrap();
         q.on_failed("a", now);
         assert_eq!(
             q.on_failed("b", now),
@@ -234,7 +257,7 @@ mod tests {
     #[test]
     fn start_timeout_counts_as_failure() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(2), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(2), now).unwrap();
         assert_eq!(q.on_tick(now + Duration::from_secs(5)), Action::Wait);
         assert_eq!(
             q.on_tick(now + START_TIMEOUT),
@@ -250,7 +273,7 @@ mod tests {
     #[test]
     fn loaded_streams_do_not_time_out() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(2), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(2), now).unwrap();
         q.on_loaded();
         assert_eq!(q.on_tick(now + START_TIMEOUT * 10), Action::Wait);
     }
@@ -258,7 +281,7 @@ mod tests {
     #[test]
     fn early_end_of_file_is_a_dead_link() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(2), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(2), now).unwrap();
         q.on_loaded();
         q.on_duration(3000.0);
         q.on_position(600.0);
@@ -272,7 +295,7 @@ mod tests {
     #[test]
     fn real_end_of_file_is_not_a_failure() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(2), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(2), now).unwrap();
         q.on_loaded();
         q.on_duration(3000.0);
         q.on_position(2990.0);
@@ -283,7 +306,7 @@ mod tests {
     #[test]
     fn unknown_duration_end_is_not_a_failure() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(2), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(2), now).unwrap();
         q.on_position(100.0);
         assert_eq!(q.on_end_of_file(now), Action::Wait);
     }
@@ -291,7 +314,7 @@ mod tests {
     #[test]
     fn switching_source_keeps_position() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(3), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(3), now).unwrap();
         q.on_loaded();
         q.on_position(300.0);
         assert_eq!(
@@ -306,7 +329,7 @@ mod tests {
     #[test]
     fn ignores_bad_numbers() {
         let now = Instant::now();
-        let (mut q, _) = PlayQueue::new(candidates(2), now).unwrap();
+        let (mut q, _) = PlayQueue::new_at(candidates(2), now).unwrap();
         q.on_position(f64::NAN);
         q.on_duration(-1.0);
         assert_eq!(

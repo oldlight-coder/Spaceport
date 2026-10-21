@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { onPlayerEvent } from "../api/player";
+import { formatTime } from "../format";
 import {
   control,
   Control,
@@ -19,14 +20,6 @@ const SEEK_TOLERANCE = 3;
 /** Stop holding the seek target after this long, in case the seek never lands. */
 const SEEK_HOLD_MS = 30_000;
 
-export function formatTime(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
-  const s = Math.floor(seconds);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const rest = String(s % 60).padStart(2, "0");
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${rest}` : `${m}:${rest}`;
-}
 
 const send = (c: Control) => {
   control(c).catch(() => {});
@@ -114,6 +107,9 @@ export default function Controls() {
   // After a seek, keep showing the target until playback gets there: seeking into a part that
   // has not loaded yet can take a few seconds.
   const [pendingSeek, setPendingSeek] = useState<{ target: number; at: number } | null>(null);
+  // "Resumed at …" with a way back to the start, shown once per video.
+  const [resumeNotice, setResumeNotice] = useState<number | null>(null);
+  const resumeShownFor = useRef<string | null>(null);
   const hideTimer = useRef<number | undefined>(undefined);
   const clickTimer = useRef<number | undefined>(undefined);
   const overBar = useRef(false);
@@ -130,6 +126,15 @@ export default function Controls() {
       stopEvents.then((stop) => stop());
     };
   }, []);
+
+  useEffect(() => {
+    if (!state?.stream || state.resumedFrom == null) return;
+    if (resumeShownFor.current === state.title) return;
+    resumeShownFor.current = state.title;
+    setResumeNotice(state.resumedFrom);
+    const timer = window.setTimeout(() => setResumeNotice(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [state?.stream, state?.resumedFrom, state?.title]);
 
   // Release the held seek target once playback has reached it (or given up).
   useEffect(() => {
@@ -305,6 +310,19 @@ export default function Controls() {
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {resumeNotice != null && !toast && (
+        <div className="toast resume-toast">
+          Resumed at {formatTime(resumeNotice)}
+          <button
+            onClick={() => {
+              seekTo(0);
+              setResumeNotice(null);
+            }}
+          >
+            Start over
+          </button>
+        </div>
+      )}
 
       <div
         className="bottom"

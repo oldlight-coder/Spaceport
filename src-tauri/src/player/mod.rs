@@ -5,6 +5,7 @@ mod mpv;
 mod queue;
 mod state;
 mod surface;
+mod watch;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -21,6 +22,8 @@ use queue::{Action, PlayQueue};
 pub use state::PlaybackState as PlaybackStateView;
 use state::PlaybackState;
 use surface::Surface;
+use watch::WatchTracker;
+pub use watch::{WatchReport, WatchTarget};
 
 /// The DLL `pnpm run setup` places in `src-tauri/lib` and the installer puts next to the app.
 const LIBRARY_FILE: &str = "libmpv-2.dll";
@@ -135,12 +138,17 @@ pub enum Control {
 /// The candidates of the current title, shared with the event thread.
 type SharedQueue = Arc<Mutex<Option<PlayQueue>>>;
 type SharedState = Arc<Mutex<PlaybackState>>;
+type SharedWatch = Arc<Mutex<Option<WatchTracker>>>;
+
+/// Receives progress reports (to save locally and in the Stremio library).
+pub type Reporter = Arc<dyn Fn(WatchReport) + Send + Sync>;
 
 struct Session {
     mpv: Arc<Mpv>,
     surface: Surface,
     queue: SharedQueue,
     state: SharedState,
+    watch: SharedWatch,
 }
 
 /// The user's preferences the player starts with.
@@ -174,6 +182,19 @@ fn apply_style(mpv: &Mpv, style: &SubtitleStyle) {
 pub struct Player {
     lib: Mutex<Option<Arc<MpvLib>>>,
     session: Mutex<Option<Session>>,
+    reporter: Mutex<Option<Reporter>>,
+}
+
+/// Sends the tracker's report, if playback started.
+fn report(watch: &SharedWatch, reporter: &Option<Reporter>, finished: bool) {
+    let report = watch
+        .lock()
+        .unwrap()
+        .as_mut()
+        .and_then(|w| w.report(Instant::now(), finished));
+    if let (Some(report), Some(reporter)) = (report, reporter) {
+        reporter(report);
+    }
 }
 
 /// Where libmpv may be, in order: next to the installed app (bundle resources), next to the
@@ -230,16 +251,24 @@ impl Player {
         candidates: Vec<Candidate>,
         title: &str,
         prefs: &PlayerPrefs,
+        target: WatchTarget,
+        start: Option<f64>,
     ) -> Result<(), String> {
+        let now = Instant::now();
         let (queue, first) =
-            PlayQueue::new(candidates, Instant::now()).ok_or("there is no stream to play")?;
+            PlayQueue::new(candidates, now, start).ok_or("there is no stream to play")?;
+        let reporter = self.reporter.lock().unwrap().clone();
         let mut session = self.session.lock().unwrap();
         if let Some(existing) = session.as_ref() {
+            // Save where the previous video got to before switching.
+            report(&existing.watch, &reporter, false);
+            *existing.watch.lock().unwrap() = Some(WatchTracker::new(target, now));
             {
                 let mut state = existing.state.lock().unwrap();
                 state.title = title.to_string();
                 state.sources = queue.labels();
                 state.source_index = 0;
+                state.resumed_from = start;
                 state.set_addon_subtitles(Vec::new());
             }
             existing.mpv.set_property("force-media-title", title)?;
@@ -279,15 +308,25 @@ impl Player {
                 .as_ref()
                 .map(PlayQueue::labels)
                 .unwrap_or_default(),
+            resumed_from: start,
             ..PlaybackState::default()
         }));
-        spawn_event_thread(app.clone(), mpv.clone(), queue.clone(), state.clone());
+        let watch: SharedWatch = Arc::new(Mutex::new(Some(WatchTracker::new(target, now))));
+        spawn_event_thread(
+            app.clone(),
+            mpv.clone(),
+            queue.clone(),
+            state.clone(),
+            watch.clone(),
+            reporter,
+        );
         apply(&mpv, first)?;
         *session = Some(Session {
             mpv,
             surface,
             queue,
             state,
+            watch,
         });
         Ok(())
     }
@@ -381,6 +420,11 @@ impl Player {
             }
             Control::Close => mpv.command(&["quit"]),
         }
+    }
+
+    /// Sets who receives progress reports. Called once at start-up.
+    pub fn set_reporter(&self, reporter: Reporter) {
+        *self.reporter.lock().unwrap() = Some(reporter);
     }
 
     /// Applies a new subtitle style to the open player, after Settings changed.
@@ -546,7 +590,14 @@ fn follow(app: &AppHandle, mpv: &Mpv, action: Action, reason: &str) {
 
 /// Forwards mpv events to the UI, switches streams on failure, and removes the video and
 /// controls windows once mpv shuts down.
-fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue, state: SharedState) {
+fn spawn_event_thread(
+    app: AppHandle,
+    mpv: Arc<Mpv>,
+    queue: SharedQueue,
+    state: SharedState,
+    watch: SharedWatch,
+    reporter: Option<Reporter>,
+) {
     std::thread::spawn(move || {
         let mut last_sent = Instant::now();
         loop {
@@ -554,26 +605,44 @@ fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue, state: 
             let event = mpv.wait_event(1.0);
             let now = Instant::now();
 
+            // Progress is saved regularly while playing.
+            let paused = state.lock().unwrap().paused;
+            let due = watch
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|w| w.due(now, paused));
+            if due {
+                report(&watch, &reporter, false);
+            }
+
             if let Event::Property { name, value } = &event {
                 let mut current = state.lock().unwrap();
                 let urgent = current.apply(name, value);
-                if name == "time-pos" {
-                    if let mpv::PropertyValue::Double(v) = value {
-                        if let Some(q) = queue.lock().unwrap().as_mut() {
-                            q.on_position(*v);
+                if let mpv::PropertyValue::Double(v) = value {
+                    if let Some(q) = queue.lock().unwrap().as_mut() {
+                        match name.as_str() {
+                            "time-pos" => q.on_position(*v),
+                            "duration" => q.on_duration(*v),
+                            _ => {}
                         }
                     }
-                }
-                if name == "duration" {
-                    if let mpv::PropertyValue::Double(v) = value {
-                        if let Some(q) = queue.lock().unwrap().as_mut() {
-                            q.on_duration(*v);
+                    if let Some(w) = watch.lock().unwrap().as_mut() {
+                        match name.as_str() {
+                            "time-pos" => w.on_position(*v),
+                            "duration" => w.on_duration(*v),
+                            _ => {}
                         }
                     }
                 }
                 if urgent || now.duration_since(last_sent) >= POSITION_INTERVAL {
                     last_sent = now;
                     let _ = app.emit("player-state", current.clone());
+                }
+                let paused_now = name == "pause" && *value == mpv::PropertyValue::Flag(true);
+                drop(current);
+                if paused_now {
+                    report(&watch, &reporter, false);
                 }
                 continue;
             }
@@ -589,6 +658,9 @@ fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue, state: 
                 Event::Shutdown => break,
                 Event::FileLoaded => {
                     q.on_loaded();
+                    if let Some(w) = watch.lock().unwrap().as_mut() {
+                        w.on_loaded();
+                    }
                     let label = q.current_label().to_string();
                     let index = q.index();
                     drop(guard);
@@ -606,6 +678,7 @@ fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue, state: 
                 Event::EndOfFile => {
                     if q.finished_normally() {
                         drop(guard);
+                        report(&watch, &reporter, true);
                         let _ = app.emit("player", PlayerEvent::Ended);
                     } else {
                         let action = q.on_end_of_file(now);
@@ -621,6 +694,8 @@ fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue, state: 
                 _ => {}
             }
         }
+        // Save where playback stopped.
+        report(&watch, &reporter, false);
         drop(mpv);
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {

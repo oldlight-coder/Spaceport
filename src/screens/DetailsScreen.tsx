@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Episode, getMeta, MetaDetails } from "../api/meta";
 import { candidatesFrom, onPlayerEvent, openPlayer } from "../api/player";
+import { titleProgress, VideoProgress, watchedShare } from "../api/progress";
+import { formatTime } from "../format";
 import { fetchStreams, RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
@@ -40,9 +42,27 @@ interface StreamTarget {
   heading: string;
 }
 
+/** Saved positions by video id; refreshed whenever the player closes. */
+function useTitleProgress(id: string) {
+  const [progress, setProgress] = useState<Record<string, VideoProgress>>({});
+  useEffect(() => {
+    const load = () => titleProgress(id).then(setProgress).catch(() => {});
+    load();
+    const unlisten = onPlayerEvent((event) => {
+      // The last position is saved as the player closes; read it a moment later.
+      if (event.kind === "closed") window.setTimeout(load, 1000);
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+  }, [id]);
+  return progress;
+}
+
 function Details({ meta }: { meta: MetaDetails }) {
   const [target, setTarget] = useState<StreamTarget | null>(null);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const progress = useTitleProgress(meta.id);
 
   useEffect(() => {
     const unlisten = onPlayerEvent((event) => {
@@ -71,7 +91,8 @@ function Details({ meta }: { meta: MetaDetails }) {
     }
     setNotice({ text: `Starting ${candidates[0].label}…` });
     try {
-      await openPlayer(candidates, fullTitle(target.heading), meta.type, target.videoId);
+      const item = { id: meta.id, type: meta.type, name: meta.name, poster: meta.poster };
+      await openPlayer(candidates, fullTitle(target.heading), item, target.videoId);
     } catch (e) {
       setNotice({ text: String(e), error: true });
     }
@@ -135,7 +156,11 @@ function Details({ meta }: { meta: MetaDetails }) {
             {meta.description && <p className="description">{meta.description}</p>}
             {meta.seasons.length === 0 && meta.videos.length === 0 && (
               <div className="row-actions">
-                <button onClick={() => autoPlay(movieTarget)}>▶ Play</button>
+                <button onClick={() => autoPlay(movieTarget)}>
+                  {progress[meta.id]?.position > 0
+                    ? `▶ Resume from ${formatTime(progress[meta.id].position)}`
+                    : "▶ Play"}
+                </button>
                 <button className="secondary" onClick={() => setTarget(movieTarget)}>
                   Choose stream
                 </button>
@@ -164,11 +189,11 @@ function Details({ meta }: { meta: MetaDetails }) {
           </button>
         </div>
       )}
-      {meta.seasons.length > 0 && <Seasons meta={meta} actions={episodeActions} />}
+      {meta.seasons.length > 0 && <Seasons meta={meta} actions={episodeActions} progress={progress} />}
       {meta.videos.length > 0 && (
         <section>
           <h2>Videos</h2>
-          <EpisodeList episodes={meta.videos} actions={episodeActions} />
+          <EpisodeList episodes={meta.videos} actions={episodeActions} progress={progress} />
         </section>
       )}
       {target && (
@@ -216,7 +241,13 @@ interface EpisodeActions {
   choose: (ep: Episode) => void;
 }
 
-function Seasons({ meta, actions }: { meta: MetaDetails; actions: EpisodeActions }) {
+interface SeasonsProps {
+  meta: MetaDetails;
+  actions: EpisodeActions;
+  progress: Record<string, VideoProgress>;
+}
+
+function Seasons({ meta, actions, progress }: SeasonsProps) {
   const [selected, setSelected] = useState(() => readSeason(meta.id) ?? meta.seasons[0].number);
   const season = meta.seasons.find((s) => s.number === selected) ?? meta.seasons[0];
 
@@ -240,7 +271,7 @@ function Seasons({ meta, actions }: { meta: MetaDetails; actions: EpisodeActions
           ))}
         </select>
       </div>
-      <EpisodeList episodes={season.episodes} actions={actions} />
+      <EpisodeList episodes={season.episodes} actions={actions} progress={progress} />
     </section>
   );
 }
@@ -254,9 +285,10 @@ function formatDate(value: string | null) {
 interface EpisodeListProps {
   episodes: Episode[];
   actions: EpisodeActions;
+  progress: Record<string, VideoProgress>;
 }
 
-function EpisodeList({ episodes, actions }: EpisodeListProps) {
+function EpisodeList({ episodes, actions, progress }: EpisodeListProps) {
   return (
     <ol className="episodes">
       {episodes.map((ep) => (
@@ -274,6 +306,7 @@ function EpisodeList({ episodes, actions }: EpisodeListProps) {
               </strong>
               {ep.released && <span className="muted"> · {formatDate(ep.released)}</span>}
               {ep.overview && <p className="muted">{ep.overview}</p>}
+              <EpisodeProgress progress={progress[ep.id]} />
             </div>
           </button>
           <button
@@ -287,5 +320,18 @@ function EpisodeList({ episodes, actions }: EpisodeListProps) {
         </li>
       ))}
     </ol>
+  );
+}
+
+function EpisodeProgress({ progress }: { progress?: VideoProgress }) {
+  const share = watchedShare(progress);
+  if (share == null || !progress) return null;
+  return (
+    <>
+      <span className="progress-bar" aria-label={`${Math.round(share * 100)}% watched`}>
+        <span style={{ width: `${share * 100}%` }} />
+      </span>
+      <span className="muted small">Resume from {formatTime(progress.position)}</span>
+    </>
   );
 }

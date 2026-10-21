@@ -38,9 +38,21 @@ export function candidatesFrom(ranked: RankedStream[], first?: RankedStream): Ca
     }));
 }
 
-/** `type` and `videoId` identify the video, for fetching subtitles from addons. */
-export const openPlayer = (candidates: Candidate[], title: string, type: string, videoId: string) =>
-  invoke<void>("player_open", { candidates, title, kind: type, videoId });
+/** The title being played, for saving progress to the Stremio library. */
+export interface TitleInfo {
+  id: string;
+  type: string;
+  name: string;
+  poster: string | null;
+}
+
+/** `item` and `videoId` identify what plays: for progress, resume and addon subtitles. */
+export const openPlayer = (
+  candidates: Candidate[],
+  title: string,
+  item: TitleInfo,
+  videoId: string,
+) => invoke<void>("player_open", { candidates, title, item, videoId });
 
 export const closePlayer = () => invoke<void>("player_close");
 
