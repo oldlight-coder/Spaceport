@@ -86,6 +86,9 @@ export const openPlayer = (
   nextUp: string | null,
 ) => invoke<void>("player_open", { candidates, title, item, videoId, nextUp });
 
+/** A key pressed in the main window while a video plays, forwarded to the player controls. */
+export const PLAYER_KEY_EVENT = "player-key";
+
 /** Sent by the player's countdown when the next episode should start. */
 export const PLAY_NEXT_EVENT = "player-play-next";
 

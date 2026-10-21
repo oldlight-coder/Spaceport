@@ -63,6 +63,27 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - **Acceptance:** fresh Windows install from the NSIS installer works end to end: login, browse,
   pick, play, resume, skip intro.
 
+## M9. Conveniences
+- [ ] Remove "The picture stays on this computer" from Settings
+- [ ] Continue Watching: remove one title, clear all
+- [ ] Search history with single remove and Clear all
+- [ ] Library split into Movies and Series
+- [ ] Player keys work from any Spaceport window (J/K/L, arrows, volume)
+- **Acceptance:** each item works in the installed app.
+
+## M10. Look and feel
+- [ ] Material You theme from an accent color, with custom colors in Settings
+- [ ] Light, dark and follow-system modes
+- [ ] Styled scrollbars and smooth scrolling
+- [ ] Skeleton loading placeholders
+- **Acceptance:** every screen reads well in light and dark mode with a few accent colors.
+
+## M11. Ratings
+- [ ] Source to be chosen by the owner (see Decisions)
+
+## M12. Android
+- [ ] Scope to be agreed with the owner before work starts
+
 ## Decisions
 (Record any spec changes agreed with the owner here.)
 - 2026-10-20: Settings page brought forward from M8 at the owner's request. A cog button in the top
@@ -83,6 +104,13 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-21: Privacy check (owner's choice): hosts an installed addon points to (images, stream
   links and debrid download servers, subtitle files, torrent trackers and peers) count as part of
   that addon. They are listed in the README's "Network and privacy" section; no restriction added.
+- 2026-10-21: New features requested by the owner after M8 became M9 to M12 and SPEC section 8.
+  M8's installer acceptance test is still to be run; it can be run on a later build.
+- 2026-10-21: Chromecast dropped (owner's choice): it needed mDNS on the LAN and, for torrents, a
+  stream server reachable from the LAN, both against the hard rules.
+- 2026-10-21: Player skip keys stay at 10 s for J/L and the arrows (owner's choice).
+- 2026-10-21: Android: the owner wants Spaceport to run on Android. It is a large port (player,
+  secret storage and windows are Windows-specific), so it comes last as M12 with its own scope.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -211,3 +239,9 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-21: M8 error states accepted by the owner. Privacy check done: every hard-coded host is
   on the allowed list, no logging, no updater or telemetry, mpv loads no scripts, secrets only in
   Credential Manager, no links on disk. README gained a "Network and privacy" section.
+- 2026-10-21: M9 implemented (not yet ticked: needs a Windows check): picture note removed from
+  Settings; Continue Watching cards get a remove button and the row a Clear all (rewinds the
+  title in Stremio, like the official Dismiss, and forgets local positions); recent searches
+  under the search field with remove and Clear all (stored on this computer); Library grouped
+  into Movies, Series and other types; player keys also work while the main window has focus
+  and ignore Caps Lock/Shift.

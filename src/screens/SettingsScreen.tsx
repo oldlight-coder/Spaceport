@@ -113,7 +113,6 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
                 Sign out
               </button>
             </div>
-            <span className="muted small">The picture stays on this computer.</span>
           </div>
         </div>
       </section>

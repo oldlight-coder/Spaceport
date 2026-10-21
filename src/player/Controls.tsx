@@ -1,6 +1,6 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { emit } from "@tauri-apps/api/event";
-import { onPlayerEvent, PLAY_NEXT_EVENT } from "../api/player";
+import { emit, listen } from "@tauri-apps/api/event";
+import { onPlayerEvent, PLAY_NEXT_EVENT, PLAYER_KEY_EVENT } from "../api/player";
 import { formatTime } from "../format";
 import {
   control,
@@ -319,11 +319,13 @@ export default function Controls() {
     }
   }, [paused, menu, wake]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  // Keys pressed here or forwarded by the main window (PLAYER_KEY_EVENT). Returns whether the
+  // key did something.
+  const handleKey = useCallback(
+    (key: string): boolean => {
       wake();
       const volume = state?.volume ?? 100;
-      switch (e.key) {
+      switch (key.length === 1 ? key.toLowerCase() : key) {
         case " ":
         case "k":
           send({ action: "togglePause" });
@@ -359,13 +361,25 @@ export default function Controls() {
           else send({ action: "back" });
           break;
         default:
-          return;
+          return false;
       }
-      e.preventDefault();
+      return true;
+    },
+    [state?.volume, wake, skip, menu],
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (handleKey(e.key)) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [state?.volume, wake, skip, menu]);
+    const unlisten = listen<string>(PLAYER_KEY_EVENT, (e) => handleKey(e.payload));
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      unlisten.then((stop) => stop());
+    };
+  }, [handleKey]);
 
   // A single click pauses (or closes an open menu); a double click toggles fullscreen.
   function onSurfaceClick(e: React.MouseEvent) {

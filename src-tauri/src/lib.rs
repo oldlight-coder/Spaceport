@@ -611,6 +611,54 @@ async fn continue_watching(
     Ok(progress::continue_watching(&items))
 }
 
+/// Removes titles from Continue Watching: their Stremio position goes back to the start and the
+/// positions kept on this computer are forgotten, so they also start over here.
+#[tauri::command]
+async fn continue_dismiss(
+    state: tauri::State<'_, AppState>,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    let key = state.auth_key()?;
+    let _one_at_a_time = state.progress_lock.lock().await;
+    let now = progress::iso_time(std::time::SystemTime::now());
+    let mut items: Vec<Value> = state
+        .api
+        .library_items(&key)
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|i| {
+            i.get("_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| ids.iter().any(|wanted| wanted == id))
+        })
+        .collect();
+    for item in &mut items {
+        progress::rewind(item, &now);
+    }
+    if !items.is_empty() {
+        state
+            .api
+            .put_library_items(&key, &items)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    for id in &ids {
+        for video in state.resume.for_title(id).into_keys() {
+            let _ = state.resume.update(
+                &video,
+                progress::VideoProgress {
+                    position: 0.0,
+                    duration: 0.0,
+                    updated: progress::now_millis(),
+                    source: None,
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Saved positions of every video of a title, for progress bars on the details page.
 #[tauri::command]
 fn title_progress(
@@ -796,6 +844,7 @@ pub fn run() {
             player_state,
             player_load_subtitle,
             continue_watching,
+            continue_dismiss,
             title_progress,
             watched_get,
             watched_set

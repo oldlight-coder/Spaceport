@@ -53,7 +53,18 @@ or hosted services of its own.
 - No plugin system that runs downloaded code. Only Stremio addons, which are HTTP APIs.
 - Settings and tokens stored locally, with debrid keys in the Windows Credential Manager.
 
-## 8. Technology
+## 8. Additions agreed with the owner (2026-10-21)
+- Continue Watching: remove one title or clear the whole row.
+- Search history: recent searches, each removable, with a Clear all.
+- Library split into Movies and Series.
+- Player keys: J/Left back 10 s, K/Space pause, L/Right forward 10 s, Up/Down volume; they work
+  whichever Spaceport window has focus.
+- Look: Material You (Material 3) styling with a chosen accent color, light, dark or follow the
+  system theme, styled scrollbars, smooth scrolling and skeleton loading placeholders.
+- Ratings beyond IMDb: source still to be chosen by the owner.
+- Android version: later, as its own milestone once the Windows app is finished.
+
+## 9. Technology
 | Part | Choice | Notes |
 | --- | --- | --- |
 | App shell | Tauri 2 | Small installer, uses Windows WebView2 |

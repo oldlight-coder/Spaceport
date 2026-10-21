@@ -9,9 +9,21 @@ interface Props {
   progress?: number | null;
   /** A second line, such as the episode to continue. */
   caption?: string | null;
+  /** Shows a remove button on the card, labelled with `removeLabel`. */
+  onRemove?: () => void;
+  removeLabel?: string;
 }
 
-export default function PosterCard({ name, poster, shape, title, progress, caption }: Props) {
+export default function PosterCard({
+  name,
+  poster,
+  shape,
+  title,
+  progress,
+  caption,
+  onRemove,
+  removeLabel = "Remove",
+}: Props) {
   const openTitle = useOpenTitle();
   const className = shape === "landscape" ? "poster-card landscape" : "poster-card";
   return (
@@ -30,6 +42,16 @@ export default function PosterCard({ name, poster, shape, title, progress, capti
         <span className="poster-title">{name}</span>
         {caption && <span className="poster-caption muted">{caption}</span>}
       </button>
+      {onRemove && (
+        <button
+          className="poster-remove"
+          onClick={onRemove}
+          aria-label={`${removeLabel}: ${name}`}
+          title={removeLabel}
+        >
+          ✕
+        </button>
+      )}
     </li>
   );
 }

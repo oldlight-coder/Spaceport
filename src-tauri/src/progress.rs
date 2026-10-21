@@ -151,6 +151,18 @@ fn number(state: &Map<String, Value>, key: &str) -> f64 {
     state.get(key).and_then(Value::as_f64).unwrap_or(0.0)
 }
 
+/// Takes a title off Continue Watching, as the official apps' Dismiss does: the position goes
+/// back to the start. Watched marks and watch-time totals stay.
+pub fn rewind(item: &mut Value, now: &str) {
+    let Some(object) = item.as_object_mut() else {
+        return;
+    };
+    if let Some(state) = object.get_mut("state").and_then(Value::as_object_mut) {
+        state.insert("timeOffset".into(), json!(0));
+    }
+    object.insert("_mtime".into(), json!(now));
+}
+
 /// Writes a position into a library item's state. `watched_seconds` is the time actually
 /// watched since the last update, added to the watch-time totals. Fields Spaceport does not
 /// know are kept as they are.
@@ -380,6 +392,19 @@ mod tests {
         assert_eq!(item["removed"], json!(true));
         assert_eq!(item["temp"], json!(true));
         assert_eq!(item["state"]["timeOffset"], json!(0));
+    }
+
+    #[test]
+    fn rewound_titles_leave_continue_watching() {
+        let mut item = new_library_item(&title(), "t0");
+        apply_progress(&mut item, "tt0903747:1:2", 754.4, 2890.0, 60.0, "t1");
+        item["_id"] = json!("tt0903747");
+        assert_eq!(continue_watching(std::slice::from_ref(&item)).len(), 1);
+        rewind(&mut item, "t2");
+        assert!(continue_watching(std::slice::from_ref(&item)).is_empty());
+        assert_eq!(item["state"]["timeWatched"], json!(60_000));
+        assert_eq!(item["state"]["video_id"], json!("tt0903747:1:2"));
+        assert_eq!(item["_mtime"], json!("t2"));
     }
 
     #[test]

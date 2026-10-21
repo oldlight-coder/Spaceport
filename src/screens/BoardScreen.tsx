@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { listCatalogs } from "../api/catalog";
 import { onPlayerEvent } from "../api/player";
-import { continueWatching, episodeLabel, watchedShare } from "../api/progress";
+import { continueWatching, dismissContinue, episodeLabel, watchedShare } from "../api/progress";
 import PosterCard from "../components/PosterCard";
 import CatalogRow from "../components/CatalogRow";
 import { LoadableList, useLoad } from "../components/Loadable";
@@ -36,7 +36,8 @@ export default function BoardScreen() {
 
 /** Titles started and not finished, from the Stremio library, most recent first. */
 function ContinueRow() {
-  const [items, reload] = useLoad(continueWatching);
+  const [items, reload, setItems] = useLoad(continueWatching);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const unlisten = onPlayerEvent((event) => {
       // Progress is saved to Stremio as the player closes; refresh shortly after.
@@ -46,10 +47,32 @@ function ContinueRow() {
       unlisten.then((stop) => stop());
     };
   }, [reload]);
-  if (items.status !== "ready" || items.data.length === 0) return null;
+  if (items.status !== "ready" || (items.data.length === 0 && !error)) return null;
+
+  // The row updates at once; the Stremio library follows.
+  async function dismiss(ids: string[]) {
+    if (items.status !== "ready") return;
+    setError(null);
+    setItems({ status: "ready", data: items.data.filter((i) => !ids.includes(i.id)) });
+    try {
+      await dismissContinue(ids);
+    } catch (e) {
+      setError(`Could not update Continue Watching: ${e}`);
+      reload();
+    }
+  }
+
   return (
     <section className="row">
-      <h2>Continue Watching</h2>
+      <h2 className="row-head">
+        Continue Watching
+        {items.data.length > 1 && (
+          <button className="text-button" onClick={() => dismiss(items.data.map((i) => i.id))}>
+            Clear all
+          </button>
+        )}
+      </h2>
+      {error && <p className="error small">{error}</p>}
       <ul className="poster-row">
         {items.data.map((item) => (
           <PosterCard
@@ -59,6 +82,8 @@ function ContinueRow() {
             title={{ type: item.type, id: item.id }}
             progress={watchedShare(item)}
             caption={episodeLabel(item.videoId, item.id)}
+            onRemove={() => dismiss([item.id])}
+            removeLabel="Remove from Continue Watching"
           />
         ))}
       </ul>

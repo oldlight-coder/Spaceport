@@ -1,9 +1,11 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { logout, Session, User } from "../api/auth";
 import { getSettings, saveSettings, Settings } from "../api/settings";
 import Avatar from "../components/Avatar";
+import SearchBox from "../components/SearchBox";
 import { OpenAddonsContext, OpenTitleContext, TitleRef } from "../navigation";
 import { useOnline } from "../online";
+import { useForwardPlayerKeys } from "../playerKeys";
 import BoardScreen from "./BoardScreen";
 import DetailsScreen from "./DetailsScreen";
 import DiscoverScreen from "./DiscoverScreen";
@@ -29,11 +31,11 @@ export default function HomeScreen({ user, onSession }: Props) {
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState<Page>("board");
   const [title, setTitle] = useState<TitleRef | null>(null);
-  const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const online = useOnline();
+  useForwardPlayerKeys();
 
   useEffect(() => {
     getSettings()
@@ -56,10 +58,7 @@ export default function HomeScreen({ user, onSession }: Props) {
     window.setTimeout(() => document.getElementById("settings-addons")?.scrollIntoView(), 0);
   }
 
-  function search(event: FormEvent) {
-    event.preventDefault();
-    const term = input.trim();
-    if (!term) return;
+  function search(term: string) {
     setQuery(term);
     go("search");
   }
@@ -95,15 +94,7 @@ export default function HomeScreen({ user, onSession }: Props) {
                 </button>
               ))}
             </nav>
-            <form className="search-form spacer" onSubmit={search} role="search">
-              <input
-                type="search"
-                placeholder="Search"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                aria-label="Search all addons"
-              />
-            </form>
+            <SearchBox onSearch={search} />
             <button
               className={page === "settings" ? "settings-button active" : "settings-button"}
               onClick={() => go("settings")}
