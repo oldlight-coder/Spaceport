@@ -44,6 +44,8 @@ export interface TitleInfo {
   type: string;
   name: string;
   poster: string | null;
+  /** Every video id in the addon's order; empty for movies. */
+  videoIds: string[];
 }
 
 /** `item` and `videoId` identify what plays: for progress, resume and addon subtitles. */

@@ -121,6 +121,7 @@ mod tests {
                 kind: "series".into(),
                 name: "Show".into(),
                 poster: None,
+                video_ids: vec![],
             },
             video_id: "tt1:1:1".into(),
         }

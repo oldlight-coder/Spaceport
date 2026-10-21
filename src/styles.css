@@ -938,3 +938,23 @@ input[type="range"] {
   margin: 8px 0 0;
   max-width: 260px;
 }
+
+.episode-mark {
+  flex: none;
+  width: 52px;
+  padding: 0;
+  font-size: 20px;
+  color: var(--muted);
+}
+
+.episode-mark.on,
+.watched-toggle.on {
+  color: #8ee6b4;
+  border-color: #2f6b4c;
+}
+
+.season-mark {
+  margin-left: auto;
+  font-size: 14px;
+  padding: 8px 12px;
+}

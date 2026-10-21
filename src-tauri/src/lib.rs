@@ -7,6 +7,7 @@ mod secrets;
 mod settings;
 mod stremio;
 mod torrent;
+mod watched;
 
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -473,7 +474,86 @@ async fn save_progress(app: tauri::AppHandle, report: player::WatchReport) {
         report.watched_seconds,
         &now,
     );
+    // Watching 90% or more marks the video watched, as the official apps do.
+    let mostly_watched = report.duration > 0.0 && report.position >= report.duration * 0.9;
+    if report.finished || mostly_watched {
+        let videos = if report.target.video_id == title.id {
+            Vec::new()
+        } else {
+            vec![report.target.video_id.clone()]
+        };
+        if videos.is_empty() || !title.video_ids.is_empty() {
+            watched::apply_marks(&mut item, &title.video_ids, &videos, true, &now);
+        }
+    }
     let _ = state.api.put_library_items(&key, &[item]).await;
+}
+
+/// What is marked watched for a title, read from its Stremio library item.
+#[tauri::command]
+async fn watched_get(
+    state: tauri::State<'_, AppState>,
+    item: progress::TitleInfo,
+) -> Result<watched::WatchedMarks, String> {
+    let key = state.auth_key()?;
+    let stored = state
+        .api
+        .library_item(&key, &item.id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(match stored {
+        Some(stored) => watched::read_marks(&stored, &item.video_ids),
+        None => watched::WatchedMarks {
+            title: false,
+            videos: Vec::new(),
+        },
+    })
+}
+
+/// Marks videos (or, with `videos` empty, the whole title) watched or unwatched in Stremio.
+#[tauri::command]
+async fn watched_set(
+    state: tauri::State<'_, AppState>,
+    item: progress::TitleInfo,
+    videos: Vec<String>,
+    watched: bool,
+) -> Result<watched::WatchedMarks, String> {
+    let key = state.auth_key()?;
+    let _one_at_a_time = state.progress_lock.lock().await;
+    let now = progress::iso_time(std::time::SystemTime::now());
+    let mut stored = state
+        .api
+        .library_item(&key, &item.id)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| progress::new_library_item(&item, &now));
+    watched::apply_marks(&mut stored, &item.video_ids, &videos, watched, &now);
+    state
+        .api
+        .put_library_items(&key, std::slice::from_ref(&stored))
+        .await
+        .map_err(|e| e.to_string())?;
+    // A video marked watched starts from the beginning next time here too.
+    if watched {
+        let cleared: Vec<String> = if videos.is_empty() {
+            let mut all = item.video_ids.clone();
+            all.push(item.id.clone());
+            all
+        } else {
+            videos
+        };
+        for video in cleared {
+            let _ = state.resume.update(
+                &video,
+                progress::VideoProgress {
+                    position: 0.0,
+                    duration: 0.0,
+                    updated: progress::now_millis(),
+                },
+            );
+        }
+    }
+    Ok(watched::read_marks(&stored, &item.video_ids))
 }
 
 /// The Continue Watching row: titles started and not finished, from the Stremio library.
@@ -669,7 +749,9 @@ pub fn run() {
             player_state,
             player_load_subtitle,
             continue_watching,
-            title_progress
+            title_progress,
+            watched_get,
+            watched_set
         ])
         .build(tauri::generate_context!())
         .expect("error while building Spaceport")

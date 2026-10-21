@@ -106,6 +106,9 @@ pub struct TitleInfo {
     pub kind: String,
     pub name: String,
     pub poster: Option<String>,
+    /// Every video id in the addon's order, for watched marks. Empty for movies.
+    #[serde(default)]
+    pub video_ids: Vec<String>,
 }
 
 /// A library item for a title that is not in the library yet. Like the official apps, it is
@@ -360,6 +363,7 @@ mod tests {
             kind: "series".into(),
             name: "Breaking Bad".into(),
             poster: Some("https://p/1.jpg".into()),
+            video_ids: vec![],
         }
     }
 

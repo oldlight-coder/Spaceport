@@ -31,6 +31,8 @@ export interface MetaDetails {
   cast: string[];
   seasons: Season[];
   videos: Episode[];
+  /** Every video id in the addon's order, which Stremio's watched marks follow. */
+  videoIds: string[];
 }
 
 export const getMeta = (type: string, id: string, preferred?: string) =>

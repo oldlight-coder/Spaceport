@@ -43,7 +43,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 
 ## M6. Subtitles, resume and progress
 - [x] Subtitles from addons, embedded tracks and local files; delay and style controls
-- [ ] Resume position per episode; Continue Watching row
+- [x] Resume position per episode; Continue Watching row
 - [ ] Mark watched / unwatched; progress synced back to Stremio
 - [ ] Next-episode countdown
 - **Acceptance:** stopping halfway and reopening resumes at the same spot; the same progress shows
@@ -174,3 +174,9 @@ pass on Windows. The owner tests each milestone before the next one starts.
   (resume.json) and in the title's Stremio library item (video_id, timeOffset/duration in ms,
   watch time; new titles as temporary entries like the official apps). Playback resumes at the
   newer of the two with a Start over option; Continue Watching follows Stremio's rules.
+- 2026-10-21: M6 resume and Continue Watching confirmed by owner, including progress in the official
+  Stremio app. (c7a15a5)
+- 2026-10-21: M6 watched marks implemented (not yet ticked: needs a Windows check). Episodes, seasons
+  and whole titles can be marked watched/unwatched; stored in the library item like Stremio
+  (flaggedWatched, and state.watched as anchor:length:base64(zlib(bits)) in the addon's video
+  order, shifted by the anchor when videos change). Videos played to 90% are marked automatically.

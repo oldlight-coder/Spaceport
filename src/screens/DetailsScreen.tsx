@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Episode, getMeta, MetaDetails } from "../api/meta";
 import { candidatesFrom, onPlayerEvent, openPlayer } from "../api/player";
 import { titleProgress, VideoProgress, watchedShare } from "../api/progress";
+import { getWatched, setWatched, WatchedMarks } from "../api/watched";
+import { TitleInfo } from "../api/player";
 import { formatTime } from "../format";
 import { fetchStreams, RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
@@ -45,8 +47,12 @@ interface StreamTarget {
 /** Saved positions by video id; refreshed whenever the player closes. */
 function useTitleProgress(id: string) {
   const [progress, setProgress] = useState<Record<string, VideoProgress>>({});
+  const load = useCallback(() => {
+    titleProgress(id)
+      .then(setProgress)
+      .catch(() => {});
+  }, [id]);
   useEffect(() => {
-    const load = () => titleProgress(id).then(setProgress).catch(() => {});
     load();
     const unlisten = onPlayerEvent((event) => {
       // The last position is saved as the player closes; read it a moment later.
@@ -55,14 +61,59 @@ function useTitleProgress(id: string) {
     return () => {
       unlisten.then((stop) => stop());
     };
-  }, [id]);
-  return progress;
+  }, [load]);
+  return [progress, load] as const;
+}
+
+/** Watched marks from the Stremio library; refreshed whenever the player closes. */
+function useWatched(item: TitleInfo) {
+  const [marks, setMarks] = useState<WatchedMarks>({ title: false, videos: [] });
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const load = () => getWatched(item).then(setMarks).catch(() => {});
+    load();
+    const unlisten = onPlayerEvent((event) => {
+      if (event.kind === "closed") window.setTimeout(load, 1500);
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+    // The item object is rebuilt on every render; its id is what identifies it.
+  }, [item.id]);
+
+  async function mark(videos: string[], watched: boolean) {
+    setBusy(true);
+    try {
+      setMarks(await setWatched(item, videos, watched));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return { marks, mark, busy };
 }
 
 function Details({ meta }: { meta: MetaDetails }) {
   const [target, setTarget] = useState<StreamTarget | null>(null);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
-  const progress = useTitleProgress(meta.id);
+  const [progress, reloadProgress] = useTitleProgress(meta.id);
+  const item: TitleInfo = {
+    id: meta.id,
+    type: meta.type,
+    name: meta.name,
+    poster: meta.poster,
+    videoIds: meta.videoIds,
+  };
+  const watched = useWatched(item);
+  const watchedSet = new Set(watched.marks.videos);
+  const allWatched =
+    watched.marks.title ||
+    (meta.videoIds.length > 0 && meta.videoIds.every((id) => watchedSet.has(id)));
+  // Marking watched also clears saved positions, so progress is read again afterwards.
+  const markWatched = (videos: string[], value: boolean) =>
+    watched
+      .mark(videos, value)
+      .then(reloadProgress)
+      .catch((e) => setNotice({ text: String(e), error: true }));
 
   useEffect(() => {
     const unlisten = onPlayerEvent((event) => {
@@ -91,7 +142,6 @@ function Details({ meta }: { meta: MetaDetails }) {
     }
     setNotice({ text: `Starting ${candidates[0].label}…` });
     try {
-      const item = { id: meta.id, type: meta.type, name: meta.name, poster: meta.poster };
       await openPlayer(candidates, fullTitle(target.heading), item, target.videoId);
     } catch (e) {
       setNotice({ text: String(e), error: true });
@@ -124,6 +174,9 @@ function Details({ meta }: { meta: MetaDetails }) {
   const episodeActions: EpisodeActions = {
     play: (ep) => autoPlay(episodeTarget(ep)),
     choose: (ep) => setTarget(episodeTarget(ep)),
+    isWatched: (ep) => watchedSet.has(ep.id),
+    setWatched: (ids, value) => markWatched(ids, value),
+    busy: watched.busy,
   };
   const movieTarget = { videoId: meta.id, heading: meta.name };
   const facts = [meta.releaseInfo, meta.runtime, meta.imdbRating && `IMDb ${meta.imdbRating}`].filter(
@@ -154,6 +207,15 @@ function Details({ meta }: { meta: MetaDetails }) {
               </ul>
             )}
             {meta.description && <p className="description">{meta.description}</p>}
+            <div className="row-actions">
+              <button
+                className={allWatched ? "secondary watched-toggle on" : "secondary watched-toggle"}
+                onClick={() => markWatched([], !allWatched)}
+                disabled={watched.busy}
+              >
+                {allWatched ? "✓ Watched" : "Mark as watched"}
+              </button>
+            </div>
             {meta.seasons.length === 0 && meta.videos.length === 0 && (
               <div className="row-actions">
                 <button onClick={() => autoPlay(movieTarget)}>
@@ -239,6 +301,9 @@ function saveSeason(id: string, season: number) {
 interface EpisodeActions {
   play: (ep: Episode) => void;
   choose: (ep: Episode) => void;
+  isWatched: (ep: Episode) => boolean;
+  setWatched: (ids: string[], watched: boolean) => void;
+  busy: boolean;
 }
 
 interface SeasonsProps {
@@ -270,6 +335,7 @@ function Seasons({ meta, actions, progress }: SeasonsProps) {
             </option>
           ))}
         </select>
+        <SeasonWatchedButton episodes={season.episodes} actions={actions} />
       </div>
       <EpisodeList episodes={season.episodes} actions={actions} progress={progress} />
     </section>
@@ -310,6 +376,19 @@ function EpisodeList({ episodes, actions, progress }: EpisodeListProps) {
             </div>
           </button>
           <button
+            className={
+              actions.isWatched(ep) ? "secondary episode-mark on" : "secondary episode-mark"
+            }
+            onClick={() => actions.setWatched([ep.id], !actions.isWatched(ep))}
+            disabled={actions.busy}
+            aria-label={
+              actions.isWatched(ep) ? `Mark ${ep.title} unwatched` : `Mark ${ep.title} watched`
+            }
+            title={actions.isWatched(ep) ? "Watched (click to undo)" : "Mark watched"}
+          >
+            {actions.isWatched(ep) ? "✓" : "○"}
+          </button>
+          <button
             className="secondary choose-stream"
             onClick={() => actions.choose(ep)}
             aria-label={`Choose a stream for ${ep.title}`}
@@ -333,5 +412,18 @@ function EpisodeProgress({ progress }: { progress?: VideoProgress }) {
       </span>
       <span className="muted small">Resume from {formatTime(progress.position)}</span>
     </>
+  );
+}
+
+function SeasonWatchedButton({ episodes, actions }: { episodes: Episode[]; actions: EpisodeActions }) {
+  const all = episodes.length > 0 && episodes.every((ep) => actions.isWatched(ep));
+  return (
+    <button
+      className="secondary season-mark"
+      onClick={() => actions.setWatched(episodes.map((ep) => ep.id), !all)}
+      disabled={actions.busy}
+    >
+      {all ? "Mark season unwatched" : "Mark season watched"}
+    </button>
   );
 }

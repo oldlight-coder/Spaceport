@@ -24,6 +24,8 @@ pub struct MetaDetails {
     pub seasons: Vec<Season>,
     /// Videos without a season number, such as the parts of a channel or a movie collection.
     pub videos: Vec<Episode>,
+    /// Every video id in the order the addon lists them, which Stremio's watched marks follow.
+    pub video_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -159,6 +161,14 @@ pub fn parse_meta(body: &Value) -> Option<MetaDetails> {
     let meta = body.get("meta").filter(|m| m.is_object())?;
     let id = text(meta, "id")?;
     let (seasons, videos) = group_videos(meta);
+    let video_ids = meta
+        .get("videos")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(parse_episode)
+        .map(|e| e.id)
+        .collect();
     let mut genres = link_names(meta, "Genres");
     if genres.is_empty() {
         genres = strings(meta, "genres");
@@ -181,6 +191,7 @@ pub fn parse_meta(body: &Value) -> Option<MetaDetails> {
         cast: people(meta, "Cast", &["cast"]),
         seasons,
         videos,
+        video_ids,
         id,
     })
 }
@@ -246,6 +257,17 @@ mod tests {
             Some("Walter White…")
         );
         assert!(meta.videos.is_empty());
+        // Watched marks follow the addon's order, not the sorted one.
+        assert_eq!(
+            meta.video_ids,
+            [
+                "tt0903747:2:1",
+                "tt0903747:1:2",
+                "tt0903747:0:1",
+                "tt0903747:1:1",
+                "tt0903747:1:3"
+            ]
+        );
     }
 
     #[test]
