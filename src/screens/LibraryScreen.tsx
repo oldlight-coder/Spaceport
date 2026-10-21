@@ -3,6 +3,7 @@ import { LibraryItem, listLibrary } from "../api/library";
 import { LoadableList, useLoad } from "../components/Loadable";
 import PosterCard from "../components/PosterCard";
 import { setWatching, useWatching } from "../watching";
+import { PosterGridSkeleton } from "../components/Skeleton";
 
 // Series first, then movies, then any other type an addon uses.
 const ORDER = ["series", "movie"];
@@ -176,7 +177,12 @@ export default function LibraryScreen() {
           </ul>
         )
       ) : (
-        <LoadableList state={library} onRetry={reload} empty="Your library is empty.">
+        <LoadableList
+          state={library}
+          onRetry={reload}
+          empty="Your library is empty."
+          skeleton={<PosterGridSkeleton />}
+        >
           {() => (
             <ul className="poster-grid">
               {sortBy(group?.items ?? [], sort, libraryKey).map((item) => (

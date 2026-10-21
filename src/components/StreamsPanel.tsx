@@ -3,6 +3,7 @@ import { fetchStreams, noStreamsReason, RankedStream, Stream } from "../api/stre
 import NeedAddons from "./NeedAddons";
 import { useLoad } from "./Loadable";
 import StreamTags from "./StreamTags";
+import { ListSkeleton } from "./Skeleton";
 
 interface Props {
   type: string;
@@ -68,7 +69,12 @@ export default function StreamsPanel({ type, videoId, heading, onClose, onPick }
           ✕
         </button>
       </header>
-      {results.status === "loading" && <p className="muted">Asking your addons…</p>}
+      {results.status === "loading" && (
+        <>
+          <p className="muted small">Asking your addons…</p>
+          <ListSkeleton rows={6} />
+        </>
+      )}
       {results.status === "error" && (
         <div className="inline-error">
           <p className="error">{results.message}</p>

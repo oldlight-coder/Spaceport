@@ -70,8 +70,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Library tabs: Watching, Movies, Series (and other types)
 - [x] Mark titles as "Watching" from their page
 - [x] Player keys work from any Spaceport window (J/K/L, arrows, volume)
-- [ ] New-episode badges on series posters and "New" tags on episodes
-- [ ] Library sort: recently watched (default), recently added, name
+- [x] New-episode badges on series posters and "New" tags on episodes
+- [x] Library sort: recently watched (default), recently added, name
 - **Acceptance:** each item works in the installed app.
 
 ## M10. Look and feel
@@ -260,3 +260,11 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-21: Library sort menu (owner's request): recently watched (Stremio's lastWatched; never
   watched after, newest added first), recently added (_ctime; for Watching marks the mark time)
   and name. The choice is remembered.
+- 2026-10-21: New-episode badges and library sort accepted by the owner; M9 complete.
+- 2026-10-21: M10 implemented (not yet ticked: needs a Windows check): Settings > Appearance with
+  theme (Follow Windows, Light, Dark) and accent colour (presets or any colour). The Material 3
+  palette is built from the accent with @material/material-color-utilities (Apache-2.0, no
+  network use) and applied as CSS variables; the player controls use the accent but stay dark.
+  Pill buttons, filled cards, tonal chips and tabs, hover/press state layers, thin themed
+  scrollbars, smooth scrolling (off with reduced motion), shimmer skeletons on every loading
+  screen and a spinner at start-up.

@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 import { CatalogRef, fetchCatalog, typeLabel } from "../api/catalog";
 import { LoadableList, useLoad } from "./Loadable";
 import PosterCard from "./PosterCard";
+import { PosterRowSkeleton } from "./Skeleton";
 
 interface Props {
   catalog: CatalogRef;
@@ -30,7 +31,12 @@ export default function CatalogRow({ catalog, extra, onLoaded }: Props) {
           {typeLabel(catalog.type)} · {catalog.addonName}
         </span>
       </h2>
-      <LoadableList state={metas} onRetry={reload} empty="">
+      <LoadableList
+        state={metas}
+        onRetry={reload}
+        empty=""
+        skeleton={<PosterRowSkeleton heading={false} />}
+      >
         {(items) => (
           <ul className="poster-row">
             {items.map((meta) => (

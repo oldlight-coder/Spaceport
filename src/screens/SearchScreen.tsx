@@ -3,6 +3,7 @@ import { CatalogRef, searchCatalogs } from "../api/catalog";
 import CatalogRow from "../components/CatalogRow";
 import { LoadableList, useLoad } from "../components/Loadable";
 import NeedAddons from "../components/NeedAddons";
+import { RowsSkeleton } from "../components/Skeleton";
 
 const rowKey = (c: CatalogRef) => `${c.transportUrl} ${c.type} ${c.id}`;
 
@@ -16,6 +17,7 @@ export default function SearchScreen({ query }: { query: string }) {
         state={catalogs}
         onRetry={reload}
         empty={<NeedAddons text="None of your addons supports search." />}
+        skeleton={<RowsSkeleton />}
       >
         {(list) => <SearchRows key={query} catalogs={list} query={query} />}
       </LoadableList>

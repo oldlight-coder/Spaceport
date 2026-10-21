@@ -1,4 +1,5 @@
-import { ChangeEvent, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { ACCENT_PRESETS, Appearance, ThemeMode } from "../theme";
 import { CODECS, Settings, SubtitleStyle } from "../api/settings";
 import Avatar from "../components/Avatar";
 import LanguageList from "../components/LanguageList";
@@ -12,6 +13,12 @@ const SUBTITLE_COLOURS = [
   { name: "Cyan", value: "#00FFFF" },
 ];
 const AVATAR_SIZE = 128;
+
+const THEME_MODES: { value: ThemeMode; label: string }[] = [
+  { value: "system", label: "Follow Windows" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
 
 interface Props {
   email: string;
@@ -91,6 +98,14 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
     <div className="settings">
       <h1>Settings</h1>
       {error && <p className="error">{error}</p>}
+
+      <section className="settings-section">
+        <h2>Appearance</h2>
+        <AppearanceSettings
+          value={settings.appearance}
+          onChange={(appearance) => update({ appearance })}
+        />
+      </section>
 
       <section className="settings-section">
         <h2>Account</h2>
@@ -324,6 +339,75 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
       <section className="settings-section" id="settings-addons">
         <AddonsScreen />
       </section>
+    </div>
+  );
+}
+
+interface AppearanceProps {
+  value: Appearance;
+  onChange: (appearance: Appearance) => void;
+}
+
+/** Light, dark or Windows' mode, and the accent colour the Material You palette comes from. */
+function AppearanceSettings({ value, onChange }: AppearanceProps) {
+  // The colour picker reports every step of a drag; the choice is saved once it rests.
+  const [accent, setAccent] = useState(value.accent);
+  const timer = useRef<number>(undefined);
+  useEffect(() => setAccent(value.accent), [value.accent]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  function pickAccent(next: string, wait = 0) {
+    setAccent(next);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => onChange({ ...value, accent: next }), wait);
+  }
+
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  return (
+    <div className="settings-grid">
+      <fieldset className="setting">
+        <legend className="setting-label">Theme</legend>
+        <div className="segmented" role="radiogroup" aria-label="Theme">
+          {THEME_MODES.map((mode) => (
+            <button
+              key={mode.value}
+              role="radio"
+              aria-checked={value.mode === mode.value}
+              className={value.mode === mode.value ? "active" : undefined}
+              onClick={() => onChange({ ...value, mode: mode.value })}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="setting">
+        <legend className="setting-label">Accent colour</legend>
+        <div className="accent-swatches">
+          {ACCENT_PRESETS.map((color) => (
+            <button
+              key={color}
+              className={same(color, accent) ? "accent-swatch active" : "accent-swatch"}
+              style={{ background: color }}
+              onClick={() => pickAccent(color)}
+              aria-label={`Accent ${color}`}
+              title={color}
+            />
+          ))}
+          <label className="accent-custom" title="Choose any colour">
+            <input
+              type="color"
+              value={accent}
+              onChange={(e) => pickAccent(e.target.value.toUpperCase(), 300)}
+              aria-label="Custom accent colour"
+            />
+            Custom
+          </label>
+        </div>
+        <span className="muted small">
+          Spaceport builds its light and dark colours from this, the Material You way.
+        </span>
+      </fieldset>
     </div>
   );
 }

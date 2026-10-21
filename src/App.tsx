@@ -24,7 +24,14 @@ export default function App() {
 
   switch (view.kind) {
     case "loading":
-      return <main className="center muted">Loading…</main>;
+      return (
+        <main className="center">
+          <div className="splash" role="status" aria-label="Loading">
+            <span className="splash-mark" />
+            Spaceport
+          </div>
+        </main>
+      );
     case "error":
       return (
         <main className="center">

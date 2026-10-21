@@ -8,6 +8,7 @@ import {
   reorderAddons,
 } from "../api/addons";
 import { LoadableList, useLoad } from "../components/Loadable";
+import { ListSkeleton } from "../components/Skeleton";
 
 export default function AddonsScreen() {
   const [addons, reload, setAddons] = useLoad(listAddons);
@@ -72,7 +73,12 @@ export default function AddonsScreen() {
         </button>
       </form>
       {error && <p className="error">{error}</p>}
-      <LoadableList state={addons} onRetry={reload} empty="No addons installed.">
+      <LoadableList
+        state={addons}
+        onRetry={reload}
+        empty="No addons installed."
+        skeleton={<ListSkeleton rows={4} />}
+      >
         {(list) => (
           <ul className="addon-list">
             {list.map((addon, index) => (

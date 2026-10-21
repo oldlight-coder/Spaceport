@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { useRetryWhenOnline } from "../online";
+import { ListSkeleton } from "./Skeleton";
 
 export type Load<T> =
   | { status: "loading" }
@@ -25,14 +26,22 @@ interface LoadableListProps<T> {
   state: Load<T[]>;
   onRetry: () => void;
   empty: ReactNode;
+  /** Shown while loading; lines of text when not given. */
+  skeleton?: ReactNode;
   children: (data: T[]) => ReactNode;
 }
 
 /** Shows loading, error with retry, an empty message, or the list. */
-export function LoadableList<T>({ state, onRetry, empty, children }: LoadableListProps<T>) {
+export function LoadableList<T>({
+  state,
+  onRetry,
+  empty,
+  skeleton,
+  children,
+}: LoadableListProps<T>) {
   switch (state.status) {
     case "loading":
-      return <p className="muted">Loading…</p>;
+      return <>{skeleton ?? <ListSkeleton rows={3} />}</>;
     case "error":
       return (
         <div className="inline-error">

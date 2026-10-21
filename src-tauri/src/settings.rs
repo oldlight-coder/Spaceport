@@ -49,8 +49,7 @@ impl SubtitleStyle {
         if !(Self::MIN_SCALE..=Self::MAX_SCALE).contains(&self.scale) {
             return Err("subtitle size must be between 50% and 200%".into());
         }
-        let hex = self.color.strip_prefix('#').unwrap_or_default();
-        if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        if !is_hex_color(&self.color) {
             return Err("subtitle colour must look like #RRGGBB".into());
         }
         if self.background != "outline" && self.background != "box" {
@@ -79,6 +78,44 @@ impl SubtitleStyle {
     }
 }
 
+/// Whether `text` is a colour written as `#RRGGBB`.
+fn is_hex_color(text: &str) -> bool {
+    let hex = text.strip_prefix('#').unwrap_or_default();
+    hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// How the app looks: the light or dark mode and the colour its Material You palette is built
+/// from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Appearance {
+    /// `"system"` follows Windows' light or dark setting; `"light"` or `"dark"` fix it.
+    pub mode: String,
+    /// The accent colour as `#RRGGBB`.
+    pub accent: String,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            mode: "system".to_string(),
+            accent: "#7C8CFF".to_string(),
+        }
+    }
+}
+
+impl Appearance {
+    fn validate(&self) -> Result<(), String> {
+        if !["system", "light", "dark"].contains(&self.mode.as_str()) {
+            return Err("the theme must be system, light or dark".into());
+        }
+        if !is_hex_color(&self.accent) {
+            return Err("the accent colour must look like #RRGGBB".into());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -100,6 +137,7 @@ pub struct Settings {
     pub subtitle_style: SubtitleStyle,
     /// Skip anime intros, outros and recaps automatically (AniSkip times).
     pub anime_auto_skip: bool,
+    pub appearance: Appearance,
 }
 
 impl Default for Settings {
@@ -114,6 +152,7 @@ impl Default for Settings {
             torrent_cache_gb: 10,
             subtitle_style: SubtitleStyle::default(),
             anime_auto_skip: false,
+            appearance: Appearance::default(),
         }
     }
 }
@@ -151,6 +190,7 @@ impl Settings {
         self.subtitle_style
             .validate()
             .map_err(SettingsError::Invalid)?;
+        self.appearance.validate().map_err(SettingsError::Invalid)?;
         if !(1..=2000).contains(&self.torrent_cache_gb) {
             return Err(SettingsError::Invalid(
                 "the torrent cache must be between 1 and 2000 GB".into(),
@@ -210,6 +250,20 @@ mod tests {
             std::env::temp_dir().join(format!("spaceport-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn checks_the_appearance() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.appearance.mode, "system");
+        settings.appearance.mode = "dark".into();
+        settings.appearance.accent = "#1a73e8".into();
+        assert!(settings.validate().is_ok());
+        settings.appearance.mode = "dim".into();
+        assert!(settings.validate().is_err());
+        settings.appearance.mode = "light".into();
+        settings.appearance.accent = "blue".into();
+        assert!(settings.validate().is_err());
     }
 
     #[test]

@@ -3,6 +3,7 @@ import { CatalogRef, fetchCatalog, listCatalogs, MetaPreview } from "../api/cata
 import { LoadableList, useLoad } from "../components/Loadable";
 import NeedAddons from "../components/NeedAddons";
 import PosterCard from "../components/PosterCard";
+import { PosterGridSkeleton } from "../components/Skeleton";
 
 interface Props {
   type: string;
@@ -23,6 +24,7 @@ export default function DiscoverScreen({ type, title }: Props) {
         state={catalogs}
         onRetry={reload}
         empty={<NeedAddons text={`None of your addons has ${title.toLowerCase()} catalogs.`} />}
+        skeleton={<PosterGridSkeleton />}
       >
         {(list) => <CatalogBrowser key={type} catalogs={list} />}
       </LoadableList>
@@ -145,7 +147,7 @@ function InfiniteGrid({ catalog, genre }: { catalog: CatalogRef; genre: string }
           </button>
         </div>
       )}
-      {loading && <p className="muted">Loading…</p>}
+      {loading && <PosterGridSkeleton count={items.length === 0 ? 12 : 6} />}
       {done && items.length === 0 && <p className="muted">Nothing found.</p>}
       <div ref={sentinel} className="sentinel" />
     </>

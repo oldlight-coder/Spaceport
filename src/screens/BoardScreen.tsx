@@ -6,6 +6,7 @@ import PosterCard from "../components/PosterCard";
 import CatalogRow from "../components/CatalogRow";
 import { LoadableList, useLoad } from "../components/Loadable";
 import NeedAddons from "../components/NeedAddons";
+import { RowsSkeleton } from "../components/Skeleton";
 
 // Catalogs that need a genre belong on the type pages, not on Home.
 const homeCatalogs = () => listCatalogs().then((all) => all.filter((c) => !c.genreRequired));
@@ -18,6 +19,7 @@ export default function BoardScreen() {
       state={catalogs}
       onRetry={reload}
       empty={<NeedAddons text="None of your addons has catalogs. Install one to browse here." />}
+      skeleton={<RowsSkeleton />}
     >
       {(list) => (
         <div className="rows">

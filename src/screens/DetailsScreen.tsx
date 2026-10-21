@@ -21,6 +21,7 @@ import { fetchStreams, noStreamsReason, RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
 import { TitleRef } from "../navigation";
+import { DetailsSkeleton } from "../components/Skeleton";
 
 interface Props {
   title: TitleRef;
@@ -36,7 +37,7 @@ export default function DetailsScreen({ title, onBack }: Props) {
       <button className="secondary back" onClick={onBack}>
         ← Back
       </button>
-      {meta.status === "loading" && <p className="muted">Loading…</p>}
+      {meta.status === "loading" && <DetailsSkeleton />}
       {meta.status === "error" && (
         <div className="inline-error">
           <p className="error">{meta.message}</p>

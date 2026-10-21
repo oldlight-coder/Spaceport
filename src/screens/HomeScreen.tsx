@@ -6,6 +6,7 @@ import SearchBox from "../components/SearchBox";
 import { OpenAddonsContext, OpenTitleContext, TitleRef } from "../navigation";
 import { useOnline } from "../online";
 import { useForwardPlayerKeys } from "../playerKeys";
+import { applyTheme, cacheAppearance } from "../theme";
 import { NewEpisodesContext, useNewEpisodesLoader } from "../newEpisodes";
 import BoardScreen from "./BoardScreen";
 import DetailsScreen from "./DetailsScreen";
@@ -13,6 +14,7 @@ import DiscoverScreen from "./DiscoverScreen";
 import LibraryScreen from "./LibraryScreen";
 import SearchScreen from "./SearchScreen";
 import SettingsScreen from "./SettingsScreen";
+import { ListSkeleton } from "../components/Skeleton";
 
 interface Props {
   user: User;
@@ -38,6 +40,14 @@ export default function HomeScreen({ user, onSession }: Props) {
   const online = useOnline();
   useForwardPlayerKeys();
   const newEpisodes = useNewEpisodesLoader();
+
+  // The look follows the saved settings and is remembered for the next start's first paint.
+  const appearance = settings?.appearance;
+  useEffect(() => {
+    if (!appearance) return;
+    cacheAppearance(appearance);
+    return applyTheme(appearance);
+  }, [appearance?.mode, appearance?.accent]);
 
   useEffect(() => {
     getSettings()
@@ -144,7 +154,7 @@ export default function HomeScreen({ user, onSession }: Props) {
                     signingOut={busy}
                   />
                 ) : (
-                  <p className={settingsError ? "error" : "muted"}>{settingsError ?? "Loading…"}</p>
+                  settingsError ? <p className="error">{settingsError}</p> : <ListSkeleton rows={4} />
                 ))}
             </main>
           </div>

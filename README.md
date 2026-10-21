@@ -42,7 +42,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml
 The Stremio auth key is stored in the Windows Credential Manager (entry `Spaceport`). On
 non-Windows dev builds an in-memory store is used, so sign-in does not survive a restart there.
 
-Preferences (languages, stream filters, profile picture) are saved in `settings.json` in the app
+Preferences (languages, stream filters, profile picture, theme and accent colour) are saved in `settings.json` in the app
 config folder (`%APPDATA%\com.spaceport.client` on Windows). It holds no secrets. The position of
 every video you watch is kept next to it in `resume.json`, with the stream it was playing so a
 resumed video starts on the same source (named by torrent hash or addon and file name, never by

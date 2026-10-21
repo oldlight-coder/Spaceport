@@ -12,6 +12,7 @@
     "setup": "node scripts/setup.mjs"
   },
   "dependencies": {
+    "@material/material-color-utilities": "0.4.0",
     "@tauri-apps/api": "^2.12.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { Appearance } from "../theme";
 
 export interface StreamFilters {
   maxSize: number | null;
@@ -27,6 +28,7 @@ export interface Settings {
   subtitleStyle: SubtitleStyle;
   /** Skip anime intros, outros and recaps without asking. */
   animeAutoSkip: boolean;
+  appearance: Appearance;
 }
 
 export const getSettings = () => invoke<Settings>("settings_get");
