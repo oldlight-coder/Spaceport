@@ -543,7 +543,13 @@ async fn player_open(
     let mut playable = Vec::new();
     for candidate in candidates {
         let url = match (candidate.url, candidate.torrent) {
-            (Some(url), _) if url.starts_with("https://") || url.starts_with("http://") => url,
+            // A NUL would cut the link short when it is handed to mpv.
+            (Some(url), _)
+                if (url.starts_with("https://") || url.starts_with("http://"))
+                    && !url.contains('\0') =>
+            {
+                url
+            }
             // Torrents play through the local stream server.
             (None, Some(source)) => match engine.register(source).await {
                 Ok(url) => url,
@@ -568,6 +574,13 @@ async fn player_open(
         subtitle_style: settings.subtitle_style.clone(),
     };
     let start = resume_position(&app, &item.id, &video_id).await;
+    // A player that was just closed tears down in a moment; wait for it rather than fail.
+    for _ in 0..50 {
+        if !app.state::<AppState>().player.is_closing() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     let anime = aniskip::anime_ref(&item.id, &video_id, &item.name, &item.genres);
     let target = player::WatchTarget {
         title: item,
@@ -1062,8 +1075,16 @@ pub fn run() {
         .expect("error while building Spaceport")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                // Stop the torrent engine and delete everything it downloaded.
                 if let Some(state) = app.try_state::<AppState>() {
+                    // Save where the video got to; the player has no chance to on its own.
+                    if let Some(report) = state.player.final_report() {
+                        let save = save_progress(app.clone(), report);
+                        tauri::async_runtime::block_on(async {
+                            let _ =
+                                tokio::time::timeout(std::time::Duration::from_secs(3), save).await;
+                        });
+                    }
+                    // Stop the torrent engine and delete everything it downloaded.
                     let engine = state.torrents.clone();
                     tauri::async_runtime::block_on(engine.shutdown());
                 }

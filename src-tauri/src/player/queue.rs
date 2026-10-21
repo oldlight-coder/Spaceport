@@ -83,6 +83,12 @@ impl PlayQueue {
         &self.candidates[self.index].label
     }
 
+    /// Whether the current stream has started. Until it has, position and length reports
+    /// still come from the stream before it.
+    pub fn is_loaded(&self) -> bool {
+        self.loaded
+    }
+
     pub fn current_key(&self) -> Option<&str> {
         self.candidates[self.index].key.as_deref()
     }

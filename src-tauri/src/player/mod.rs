@@ -8,6 +8,7 @@ mod surface;
 mod watch;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -145,6 +146,10 @@ type SharedWatch = Arc<Mutex<Option<WatchTracker>>>;
 pub type Reporter = Arc<dyn Fn(WatchReport) + Send + Sync>;
 
 struct Session {
+    /// Tells this session apart from a newer one that replaced it while it was closing.
+    id: u64,
+    /// Set once mpv was asked to quit; the event thread then tears the session down.
+    closing: Arc<AtomicBool>,
     mpv: Arc<Mpv>,
     surface: Surface,
     queue: SharedQueue,
@@ -189,6 +194,15 @@ fn apply_style(mpv: &Mpv, style: &SubtitleStyle) {
     for (name, value) in style.mpv_properties() {
         let _ = mpv.set_property(name, &value);
     }
+}
+
+/// Numbers sessions, so a closing one can only tear down itself.
+static SESSION_IDS: AtomicU64 = AtomicU64::new(1);
+
+/// Asks mpv to quit and marks the session as closing.
+fn quit(mpv: &Mpv, closing: &AtomicBool) -> Result<(), String> {
+    closing.store(true, Ordering::SeqCst);
+    mpv.command(&["quit"])
 }
 
 #[derive(Default)]
@@ -278,6 +292,12 @@ impl Player {
             PlayQueue::new(candidates, now, start).ok_or("there is no stream to play")?;
         let reporter = self.reporter.lock().unwrap().clone();
         let mut session = self.session.lock().unwrap();
+        if session
+            .as_ref()
+            .is_some_and(|s| s.closing.load(Ordering::SeqCst))
+        {
+            return Err("the player is still closing; try again".to_string());
+        }
         if let Some(existing) = session.as_ref() {
             // Save where the previous video got to before switching.
             report(&existing.watch, &reporter, false);
@@ -293,6 +313,9 @@ impl Player {
                 state.skips.clear();
                 state.skip_note = None;
                 state.set_addon_subtitles(Vec::new());
+                // The old video's position and length until the new one reports its own.
+                state.position = 0.0;
+                state.duration = 0.0;
             }
             existing.mpv.set_property("force-media-title", title)?;
             *existing.queue.lock().unwrap() = Some(queue);
@@ -315,11 +338,21 @@ impl Player {
                 return Err(e);
             }
         };
-        for (id, (name, format)) in OBSERVED.iter().enumerate() {
-            mpv.observe(id as u64 + 1, name, *format)?;
+        let prepared = OBSERVED
+            .iter()
+            .enumerate()
+            .try_for_each(|(id, (name, format))| mpv.observe(id as u64 + 1, name, *format))
+            .and_then(|()| mpv.set_property("force-media-title", title))
+            .and_then(|()| {
+                apply_subtitle_prefs(&mpv, prefs);
+                // Started before the event thread exists, so a failure leaves nothing running.
+                apply(&mpv, first)
+            });
+        if let Err(e) = prepared {
+            drop(mpv);
+            surface.destroy();
+            return Err(e);
         }
-        mpv.set_property("force-media-title", title)?;
-        apply_subtitle_prefs(&mpv, prefs);
 
         let queue: SharedQueue = Arc::new(Mutex::new(Some(queue)));
         let state: SharedState = Arc::new(Mutex::new(PlaybackState {
@@ -337,16 +370,21 @@ impl Player {
             ..PlaybackState::default()
         }));
         let watch: SharedWatch = Arc::new(Mutex::new(Some(WatchTracker::new(target, now))));
+        let id = SESSION_IDS.fetch_add(1, Ordering::SeqCst);
+        let closing = Arc::new(AtomicBool::new(false));
         spawn_event_thread(
             app.clone(),
+            id,
+            closing.clone(),
             mpv.clone(),
             queue.clone(),
             state.clone(),
             watch.clone(),
             reporter,
         );
-        apply(&mpv, first)?;
         *session = Some(Session {
+            id,
+            closing,
             mpv,
             surface,
             queue,
@@ -358,6 +396,24 @@ impl Player {
 
     /// Carries out a request from the controls window.
     pub fn control(&self, app: &AppHandle, control: Control) -> Result<(), String> {
+        // Window calls run without the session lock: resizing the window calls back into
+        // the player (resize, is_open) on this same thread.
+        match control {
+            Control::ToggleFullscreen => {
+                let window = main_window(app)?;
+                let full = window.is_fullscreen().map_err(|e| e.to_string())?;
+                return window.set_fullscreen(!full).map_err(|e| e.to_string());
+            }
+            Control::Back => {
+                let window = main_window(app)?;
+                if window.is_fullscreen().unwrap_or(false) {
+                    return window.set_fullscreen(false).map_err(|e| e.to_string());
+                }
+                return self.close_session();
+            }
+            Control::Close => return self.close_session(),
+            _ => {}
+        }
         let session = self.session.lock().unwrap();
         let Some(session) = session.as_ref() else {
             return Ok(());
@@ -398,8 +454,15 @@ impl Player {
                 match loaded {
                     Some(track) => mpv.set_property("sid", &track.id.to_string()),
                     None => {
+                        // sub-add waits for the download; on this (the main) thread that
+                        // would freeze both windows, so it runs on its own.
                         let title = format!("{} · {}", sub.label, sub.addon_name);
-                        mpv.command(&["sub-add", &sub.url, "select", &title, &sub.lang])
+                        let (url, lang) = (sub.url.clone(), sub.lang.clone());
+                        let mpv = mpv.clone();
+                        std::thread::spawn(move || {
+                            let _ = mpv.command(&["sub-add", &url, "select", &title, &lang]);
+                        });
+                        Ok(())
                     }
                 }
             }
@@ -430,21 +493,37 @@ impl Player {
                 }
                 apply(mpv, action)
             }
-            Control::ToggleFullscreen => {
-                let window = main_window(app)?;
-                let full = window.is_fullscreen().map_err(|e| e.to_string())?;
-                window.set_fullscreen(!full).map_err(|e| e.to_string())
-            }
-            Control::Back => {
-                let window = main_window(app)?;
-                if window.is_fullscreen().unwrap_or(false) {
-                    window.set_fullscreen(false).map_err(|e| e.to_string())
-                } else {
-                    mpv.command(&["quit"])
-                }
-            }
-            Control::Close => mpv.command(&["quit"]),
+            Control::ToggleFullscreen | Control::Back | Control::Close => Ok(()),
         }
+    }
+
+    fn close_session(&self) -> Result<(), String> {
+        match self.session.lock().unwrap().as_ref() {
+            Some(session) => quit(&session.mpv, &session.closing),
+            None => Ok(()),
+        }
+    }
+
+    /// Whether a player is shutting down (asked to quit, not yet torn down).
+    pub fn is_closing(&self) -> bool {
+        self.session
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|s| s.closing.load(Ordering::SeqCst))
+    }
+
+    /// The progress to save for the playing video, when the app is about to exit.
+    pub fn final_report(&self) -> Option<WatchReport> {
+        let session = self.session.lock().unwrap();
+        let session = session.as_ref()?;
+        let report = session
+            .watch
+            .lock()
+            .unwrap()
+            .as_mut()
+            .and_then(|w| w.report(Instant::now(), false));
+        report
     }
 
     /// The video id playing now, if any.
@@ -537,9 +616,7 @@ impl Player {
 
     /// Asks mpv to quit; the event thread then tears the session down.
     pub fn close(&self) {
-        if let Some(session) = self.session.lock().unwrap().as_ref() {
-            let _ = session.mpv.command(&["quit"]);
-        }
+        let _ = self.close_session();
     }
 
     /// Keeps the video window the size of the main window. Main thread only.
@@ -553,8 +630,14 @@ impl Player {
         self.session.lock().unwrap().is_some()
     }
 
-    fn take_session(&self) -> Option<Session> {
-        self.session.lock().unwrap().take()
+    /// Removes the session numbered `id`, if it is still the current one.
+    fn take_session(&self, id: u64) -> Option<Session> {
+        let mut session = self.session.lock().unwrap();
+        if session.as_ref().is_some_and(|s| s.id == id) {
+            session.take()
+        } else {
+            None
+        }
     }
 }
 
@@ -633,7 +716,7 @@ fn apply(mpv: &Mpv, action: Action) -> Result<(), String> {
 }
 
 /// Acts on a queue decision and tells the UI about it.
-fn follow(app: &AppHandle, mpv: &Mpv, action: Action, reason: &str) {
+fn follow(app: &AppHandle, mpv: &Mpv, closing: &AtomicBool, action: Action, reason: &str) {
     match &action {
         Action::Load { label, .. } => {
             let _ = app.emit(
@@ -645,7 +728,7 @@ fn follow(app: &AppHandle, mpv: &Mpv, action: Action, reason: &str) {
             );
             if let Err(e) = apply(mpv, action) {
                 let _ = app.emit("player", PlayerEvent::Failed { message: e });
-                let _ = mpv.command(&["quit"]);
+                let _ = quit(mpv, closing);
             }
         }
         Action::GiveUp { tried, last_error } => {
@@ -655,7 +738,7 @@ fn follow(app: &AppHandle, mpv: &Mpv, action: Action, reason: &str) {
                 format!("None of the {tried} streams would play (last: {last_error}).")
             };
             let _ = app.emit("player", PlayerEvent::Failed { message });
-            let _ = mpv.command(&["quit"]);
+            let _ = quit(mpv, closing);
         }
         Action::Wait => {}
     }
@@ -663,8 +746,11 @@ fn follow(app: &AppHandle, mpv: &Mpv, action: Action, reason: &str) {
 
 /// Forwards mpv events to the UI, switches streams on failure, and removes the video and
 /// controls windows once mpv shuts down.
+#[allow(clippy::too_many_arguments)]
 fn spawn_event_thread(
     app: AppHandle,
+    id: u64,
+    closing: Arc<AtomicBool>,
     mpv: Arc<Mpv>,
     queue: SharedQueue,
     state: SharedState,
@@ -692,7 +778,13 @@ fn spawn_event_thread(
             if let Event::Property { name, value } = &event {
                 let mut current = state.lock().unwrap();
                 let urgent = current.apply(name, value);
-                if let mpv::PropertyValue::Double(v) = value {
+                // Until the current stream has loaded, these still describe the one before.
+                let loaded = queue
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .is_some_and(PlayQueue::is_loaded);
+                if let (mpv::PropertyValue::Double(v), true) = (value, loaded) {
                     if let Some(q) = queue.lock().unwrap().as_mut() {
                         match name.as_str() {
                             "time-pos" => q.on_position(*v),
@@ -746,7 +838,13 @@ fn spawn_event_thread(
                 Event::Failed(error) => {
                     let action = q.on_failed(&error, now);
                     drop(guard);
-                    follow(&app, &mpv, action, &format!("Stream failed ({error})"));
+                    follow(
+                        &app,
+                        &mpv,
+                        &closing,
+                        action,
+                        &format!("Stream failed ({error})"),
+                    );
                 }
                 Event::EndOfFile => {
                     if q.finished_normally() {
@@ -756,13 +854,13 @@ fn spawn_event_thread(
                     } else {
                         let action = q.on_end_of_file(now);
                         drop(guard);
-                        follow(&app, &mpv, action, "Stream stopped early");
+                        follow(&app, &mpv, &closing, action, "Stream stopped early");
                     }
                 }
                 Event::None => {
                     let action = q.on_tick(now);
                     drop(guard);
-                    follow(&app, &mpv, action, "Stream did not start");
+                    follow(&app, &mpv, &closing, action, "Stream did not start");
                 }
                 _ => {}
             }
@@ -773,11 +871,13 @@ fn spawn_event_thread(
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
             let player = handle.state::<crate::AppState>();
-            if let Some(session) = player.player.take_session() {
-                // Destroying the last Arc ends mpv; the window goes after it stops drawing.
-                drop(session.mpv);
-                session.surface.destroy();
-            }
+            // Only this session's own teardown; a newer one is left alone.
+            let Some(session) = player.player.take_session(id) else {
+                return;
+            };
+            // Destroying the last Arc ends mpv; the window goes after it stops drawing.
+            drop(session.mpv);
+            session.surface.destroy();
             if let Some(controls) = handle.get_webview_window(CONTROLS_WINDOW) {
                 let _ = controls.destroy();
             }
