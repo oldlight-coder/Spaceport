@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::aniskip::SkipSegment;
 use crate::settings::SubtitleStyle;
 use crate::stremio::subtitles::AddonSubtitle;
 use mpv::{Event, Mpv, MpvLib, FORMAT_DOUBLE, FORMAT_FLAG, FORMAT_STRING};
@@ -159,6 +160,8 @@ pub struct PlayRequest {
     pub start: Option<f64>,
     /// The next episode's label, for the countdown near the end.
     pub next_up: Option<String>,
+    /// Skip anime intros, outros and recaps without asking.
+    pub auto_skip: bool,
 }
 
 /// The user's preferences the player starts with.
@@ -267,6 +270,7 @@ impl Player {
             target,
             start,
             next_up,
+            auto_skip,
         } = request;
         let title = title.as_str();
         let now = Instant::now();
@@ -285,6 +289,8 @@ impl Player {
                 state.source_index = 0;
                 state.resumed_from = start;
                 state.next_up = next_up;
+                state.auto_skip = auto_skip;
+                state.skips.clear();
                 state.set_addon_subtitles(Vec::new());
             }
             existing.mpv.set_property("force-media-title", title)?;
@@ -326,6 +332,7 @@ impl Player {
                 .unwrap_or_default(),
             resumed_from: start,
             next_up,
+            auto_skip,
             ..PlaybackState::default()
         }));
         let watch: SharedWatch = Arc::new(Mutex::new(Some(WatchTracker::new(target, now))));
@@ -436,6 +443,39 @@ impl Player {
                 }
             }
             Control::Close => mpv.command(&["quit"]),
+        }
+    }
+
+    /// The video id playing now, if any.
+    pub fn current_video(&self) -> Option<String> {
+        let session = self.session.lock().unwrap();
+        let session = session.as_ref()?;
+        let watch = session.watch.lock().unwrap();
+        watch.as_ref().map(|w| w.video_id().to_string())
+    }
+
+    /// The length of the playing video in seconds, once known.
+    pub fn duration(&self) -> Option<f64> {
+        self.state().map(|s| s.duration).filter(|d| *d > 0.0)
+    }
+
+    /// Shows skip buttons for `video_id`, unless another video has started meanwhile.
+    pub fn set_skips(&self, app: &AppHandle, video_id: &str, skips: Vec<SkipSegment>) {
+        if self.current_video().as_deref() != Some(video_id) {
+            return;
+        }
+        if let Some(session) = self.session.lock().unwrap().as_ref() {
+            let mut state = session.state.lock().unwrap();
+            state.skips = skips;
+            let _ = app.emit("player-state", state.clone());
+        }
+    }
+
+    pub fn set_auto_skip(&self, app: &AppHandle, enabled: bool) {
+        if let Some(session) = self.session.lock().unwrap().as_ref() {
+            let mut state = session.state.lock().unwrap();
+            state.auto_skip = enabled;
+            let _ = app.emit("player-state", state.clone());
         }
     }
 

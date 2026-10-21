@@ -1,3 +1,4 @@
+mod aniskip;
 mod auth;
 mod language;
 mod player;
@@ -37,6 +38,7 @@ pub(crate) struct AppState {
     torrents: Arc<torrent::TorrentEngine>,
     /// Positions of every video watched, kept on this computer.
     resume: progress::ResumeStore,
+    aniskip: aniskip::AniSkip,
     /// One progress save at a time, so two saves of the same title never race.
     progress_lock: tokio::sync::Mutex<()>,
 }
@@ -358,6 +360,7 @@ async fn player_open(
         subtitle_style: settings.subtitle_style.clone(),
     };
     let start = resume_position(&app, &item.id, &video_id).await;
+    let anime = aniskip::anime_ref(&item.id, &video_id, &item.name, &item.genres);
     let target = player::WatchTarget {
         title: item,
         video_id: video_id.clone(),
@@ -375,6 +378,7 @@ async fn player_open(
                 target,
                 start,
                 next_up,
+                auto_skip: settings.anime_auto_skip,
             },
         );
         let _ = sender.send(result);
@@ -384,6 +388,28 @@ async fn player_open(
         .recv()
         .map_err(|_| "the player did not start".to_string())??;
     player::open_controls(&app)?;
+
+    // Anime skip times need the episode's length, so they are fetched once it is known.
+    if let Some(anime) = anime {
+        let handle = app.clone();
+        let video = video_id.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = handle.state::<AppState>();
+            let mut length = 0.0;
+            for _ in 0..60 {
+                if state.player.current_video().as_deref() != Some(video.as_str()) {
+                    return;
+                }
+                if let Some(duration) = state.player.duration() {
+                    length = duration;
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            let skips = state.aniskip.skip_times(&state.api, &anime, length).await;
+            state.player.set_skips(&handle, &video, skips);
+        });
+    }
 
     // Subtitles are not needed to start playing, so they arrive when the addons answer.
     let handle = app.clone();
@@ -656,7 +682,11 @@ fn settings_get(state: tauri::State<'_, AppState>) -> Settings {
 
 /// Saves new settings to disk and applies them to the next stream ranking.
 #[tauri::command]
-fn settings_set(state: tauri::State<'_, AppState>, settings: Settings) -> Result<Settings, String> {
+fn settings_set(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    settings: Settings,
+) -> Result<Settings, String> {
     state
         .settings_store
         .save(&settings)
@@ -664,6 +694,7 @@ fn settings_set(state: tauri::State<'_, AppState>, settings: Settings) -> Result
     state.torrents.set_dht(settings.torrent_dht);
     state.torrents.set_cache_limit(settings.torrent_cache_gb);
     state.player.set_subtitle_style(&settings.subtitle_style);
+    state.player.set_auto_skip(&app, settings.anime_auto_skip);
     *state.settings.lock().unwrap() = settings.clone();
     Ok(settings)
 }
@@ -707,6 +738,7 @@ pub fn run() {
                 player: player::Player::default(),
                 torrents,
                 resume: progress::ResumeStore::new(&config_dir),
+                aniskip: aniskip::AniSkip::default(),
                 progress_lock: tokio::sync::Mutex::new(()),
             });
             let handle = app.handle().clone();

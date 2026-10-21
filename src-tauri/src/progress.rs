@@ -109,6 +109,9 @@ pub struct TitleInfo {
     /// Every video id in the addon's order, for watched marks. Empty for movies.
     #[serde(default)]
     pub video_ids: Vec<String>,
+    /// The title's genres, to tell anime from other series for skip times.
+    #[serde(default)]
+    pub genres: Vec<String>,
 }
 
 /// A library item for a title that is not in the library yet. Like the official apps, it is
@@ -364,6 +367,7 @@ mod tests {
             name: "Breaking Bad".into(),
             poster: Some("https://p/1.jpg".into()),
             video_ids: vec![],
+            genres: vec![],
         }
     }
 

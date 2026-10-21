@@ -16,6 +16,13 @@ export interface AddonSubtitle {
   selected: boolean;
 }
 
+export interface SkipSegment {
+  kind: "intro" | "outro" | "recap";
+  /** Seconds. */
+  start: number;
+  end: number;
+}
+
 export interface PlaybackState {
   title: string;
   stream: string;
@@ -28,6 +35,9 @@ export interface PlaybackState {
   speed: number;
   seeking: boolean;
   subDelay: number;
+  /** Anime intro, outro and recap times. */
+  skips: SkipSegment[];
+  autoSkip: boolean;
   /** The next episode's label, when there is one to count down to. */
   nextUp: string | null;
   /** Where playback resumed, when it did not start at the beginning. */

@@ -45,7 +45,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Subtitles from addons, embedded tracks and local files; delay and style controls
 - [x] Resume position per episode; Continue Watching row
 - [x] Mark watched / unwatched; progress synced back to Stremio
-- [ ] Next-episode countdown
+- [x] Next-episode countdown
 - **Acceptance:** stopping halfway and reopening resumes at the same spot; the same progress shows
   in the official Stremio app.
 
@@ -185,3 +185,9 @@ pass on Windows. The owner tests each milestone before the next one starts.
   before the end a card counts down from 10 (Play now / Cancel); the next episode in season order
   (specials only to specials) starts in the same player, preferring the same bingeGroup. M6 code
   complete.
+- 2026-10-21: M6 next-episode countdown confirmed; M6 accepted by owner on Windows. (50a8a25)
+- 2026-10-21: M7 AniSkip implemented (not yet ticked: needs a Windows check; Kitsu, AniList and
+  AniSkip are unreachable from the build sandbox). MAL id from kitsu:/mal:/anilist: ids or, for
+  IMDb series with an Animation genre, an AniList search that must match the title (and season);
+  skip times fetched with the episode length; Skip Intro/Outro/Recap button and an auto-skip
+  switch in Settings > Anime. aniskip.rs parsing and matching have unit tests. M7 code complete.

@@ -25,6 +25,8 @@ export interface Settings {
   torrentDht: boolean;
   torrentCacheGb: number;
   subtitleStyle: SubtitleStyle;
+  /** Skip anime intros, outros and recaps without asking. */
+  animeAutoSkip: boolean;
 }
 
 export const getSettings = () => invoke<Settings>("settings_get");

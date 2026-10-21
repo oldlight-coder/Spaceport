@@ -58,6 +58,10 @@ impl WatchTracker {
         }
     }
 
+    pub fn video_id(&self) -> &str {
+        &self.target.video_id
+    }
+
     pub fn on_loaded(&mut self) {
         self.started = true;
     }
@@ -122,6 +126,7 @@ mod tests {
                 name: "Show".into(),
                 poster: None,
                 video_ids: vec![],
+                genres: vec![],
             },
             video_id: "tt1:1:1".into(),
         }

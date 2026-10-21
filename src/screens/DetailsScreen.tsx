@@ -110,6 +110,7 @@ function Details({ meta }: { meta: MetaDetails }) {
     name: meta.name,
     poster: meta.poster,
     videoIds: meta.videoIds,
+    genres: meta.genres,
   };
   const watched = useWatched(item);
   const watchedSet = new Set(watched.marks.videos);

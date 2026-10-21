@@ -9,6 +9,7 @@ import {
   loadSubtitleFile,
   onPlaybackState,
   PlaybackState,
+  SkipSegment,
 } from "../api/playerControls";
 
 const HIDE_AFTER_MS = 3000;
@@ -181,6 +182,44 @@ function useNextUp(state: PlaybackState | null) {
   };
 }
 
+const SKIP_LABELS: Record<SkipSegment["kind"], string> = {
+  intro: "Skip Intro",
+  outro: "Skip Outro",
+  recap: "Skip Recap",
+};
+
+/**
+ * The AniSkip segment playback is in, if any. With auto-skip on, each segment is jumped past
+ * once on entering it (seeking back into it afterwards plays it).
+ */
+function useSkip(
+  state: PlaybackState | null,
+  seekTo: (seconds: number) => void,
+  notify: (text: string) => void,
+) {
+  const skipped = useRef<Set<string>>(new Set());
+  const title = state?.title;
+  useEffect(() => {
+    skipped.current = new Set();
+  }, [title]);
+
+  const position = state?.position ?? 0;
+  // The last second of a segment is left alone, so a skip does not land back in it.
+  const current = (state?.skips ?? []).find((s) => position >= s.start && position < s.end - 1);
+  const key = current ? `${current.kind}:${current.start}` : null;
+
+  useEffect(() => {
+    if (!current || !key || !state?.autoSkip || skipped.current.has(key)) return;
+    skipped.current.add(key);
+    seekTo(current.end);
+    notify(`Skipped ${current.kind}`);
+  }, [key, current, state?.autoSkip, seekTo, notify]);
+
+  return current && !state?.autoSkip
+    ? { label: SKIP_LABELS[current.kind], skip: () => seekTo(current.end) }
+    : null;
+}
+
 /** The player controls, drawn in a transparent window over the video. */
 export default function Controls() {
   const [state, setState] = useState<PlaybackState | null>(null);
@@ -253,6 +292,11 @@ export default function Controls() {
 
   const paused = state?.paused ?? false;
   const nextUp = useNextUp(state);
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    window.setTimeout(() => setToast((current) => (current === text ? null : current)), 2500);
+  }, []);
+  const skipSegment = useSkip(state, seekTo, showToast);
 
   // Show the controls on any activity; hide them again while playing.
   const wake = useCallback(() => {
@@ -396,6 +440,12 @@ export default function Controls() {
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {/* Near the end the next-episode card takes this place and offers Play now instead. */}
+      {skipSegment && nextUp.secondsLeft == null && (
+        <button className="skip-button" onClick={skipSegment.skip}>
+          {skipSegment.label} ⏭
+        </button>
+      )}
       {nextUp.secondsLeft != null && nextUp.label && (
         <div className="next-up" role="status">
           <div className="next-up-label">

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::mpv::PropertyValue;
+use crate::aniskip::SkipSegment;
 use crate::language;
 use crate::stremio::subtitles::AddonSubtitle;
 
@@ -60,6 +61,10 @@ pub struct PlaybackState {
     pub sub_delay: f64,
     /// Subtitle size relative to the default.
     pub sub_scale: f64,
+    /// Intro, outro and recap times for anime, once AniSkip has answered.
+    pub skips: Vec<SkipSegment>,
+    /// Skip them without asking.
+    pub auto_skip: bool,
     /// The next episode's label ("S1 E3 · Title"), when there is one to count down to.
     pub next_up: Option<String>,
     /// The position playback resumed from, if it did not start at the beginning.

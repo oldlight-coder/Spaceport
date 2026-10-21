@@ -98,6 +98,8 @@ pub struct Settings {
     /// least recently watched first, beyond it. Everything is deleted when Spaceport exits.
     pub torrent_cache_gb: u32,
     pub subtitle_style: SubtitleStyle,
+    /// Skip anime intros, outros and recaps automatically (AniSkip times).
+    pub anime_auto_skip: bool,
 }
 
 impl Default for Settings {
@@ -111,6 +113,7 @@ impl Default for Settings {
             torrent_dht: true,
             torrent_cache_gb: 10,
             subtitle_style: SubtitleStyle::default(),
+            anime_auto_skip: false,
         }
     }
 }

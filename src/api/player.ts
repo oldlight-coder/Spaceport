@@ -46,6 +46,8 @@ export interface TitleInfo {
   poster: string | null;
   /** Every video id in the addon's order; empty for movies. */
   videoIds: string[];
+  /** Genres, used to tell anime from other series for skip times. */
+  genres: string[];
 }
 
 /**

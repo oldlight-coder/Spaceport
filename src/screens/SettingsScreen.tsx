@@ -271,6 +271,23 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
       </section>
 
       <section className="settings-section">
+        <h2>Anime</h2>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={settings.animeAutoSkip}
+            onChange={(e) => update({ animeAutoSkip: e.target.checked })}
+          />
+          <span>
+            <strong>Skip intros, outros and recaps automatically</strong>
+            <span className="muted small">
+              Uses community timings from AniSkip. When off, a Skip button appears instead.
+            </span>
+          </span>
+        </label>
+      </section>
+
+      <section className="settings-section">
         <h2>Torrents</h2>
         <label className="toggle">
           <input

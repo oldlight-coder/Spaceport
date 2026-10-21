@@ -195,6 +195,57 @@ impl StremioApi {
             .map_err(|_| ApiError::Addon("the addon did not return JSON".to_string()))
     }
 
+    /// GETs JSON from one of the other allowed services (Kitsu, AniList, AniSkip). A 404 is
+    /// returned as `Ok(None)`: these services answer that way when they know nothing.
+    pub async fn service_get(
+        &self,
+        url: &str,
+        timeout: Duration,
+    ) -> Result<Option<Value>, ApiError> {
+        let response = self
+            .http
+            .get(url)
+            .header("Accept", "application/json")
+            .timeout(timeout)
+            .send()
+            .await
+            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let response = response
+            .error_for_status()
+            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+        response
+            .json()
+            .await
+            .map(Some)
+            .map_err(|e| ApiError::InvalidResponse(e.to_string()))
+    }
+
+    /// POSTs a JSON body to one of the other allowed services (AniList's GraphQL endpoint).
+    pub async fn service_post(
+        &self,
+        url: &str,
+        body: &Value,
+        timeout: Duration,
+    ) -> Result<Value, ApiError> {
+        let response = self
+            .http
+            .post(url)
+            .header("Accept", "application/json")
+            .json(body)
+            .timeout(timeout)
+            .send()
+            .await
+            .and_then(|r| r.error_for_status())
+            .map_err(|e| ApiError::Transport(e.without_url().to_string()))?;
+        response
+            .json()
+            .await
+            .map_err(|e| ApiError::InvalidResponse(e.to_string()))
+    }
+
     /// Every entry of the library datastore, including removed and temporary ones, as stored.
     pub async fn library_items(&self, auth_key: &str) -> Result<Vec<Value>, ApiError> {
         self.call(
