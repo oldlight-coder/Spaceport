@@ -62,6 +62,53 @@ struct Envelope<T> {
     error: Option<ErrorBody>,
 }
 
+/// Most redirects one request may follow.
+const MAX_REDIRECTS: usize = 5;
+
+/// Whether a request that started at `first` may follow a redirect to `next`. The same host is
+/// fine; another host must be a public https one, so an addon cannot point requests at this
+/// computer or the local network. Stremio's account API may only redirect within strem.io, as
+/// a redirect re-sends the request body with the auth key.
+fn redirect_allowed(first: &reqwest::Url, next: &reqwest::Url) -> bool {
+    use std::net::IpAddr;
+    let (Some(from), Some(to)) = (first.host_str(), next.host_str()) else {
+        return false;
+    };
+    if from == "api.strem.io" {
+        return next.scheme() == "https" && (to == "strem.io" || to.ends_with(".strem.io"));
+    }
+    if from.eq_ignore_ascii_case(to) && matches!(next.scheme(), "https" | "http") {
+        return true;
+    }
+    let public = match next.host() {
+        Some(url::Host::Domain(d)) => {
+            let d = d.to_ascii_lowercase();
+            d != "localhost" && !d.ends_with(".localhost") && !d.ends_with(".local")
+        }
+        Some(url::Host::Ipv4(ip)) => {
+            let ip = IpAddr::V4(ip);
+            !(ip.is_loopback() || ip.is_unspecified() || is_local(&ip))
+        }
+        Some(url::Host::Ipv6(ip)) => {
+            let ip = IpAddr::V6(ip);
+            !(ip.is_loopback() || ip.is_unspecified() || is_local(&ip))
+        }
+        None => false,
+    };
+    next.scheme() == "https" && public
+}
+
+/// Private, link-local and other addresses that only make sense on this network.
+fn is_local(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_link_local() || v4.is_broadcast(),
+        std::net::IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+        }
+    }
+}
+
 /// A request failure in plain words. reqwest's own text ("error sending request") does not say
 /// that the computer is offline; the URL is left out because addon URLs can embed tokens.
 fn describe(error: reqwest::Error) -> String {
@@ -107,6 +154,18 @@ impl StremioApi {
         // Some services (behind Cloudflare) refuse requests that do not name their client.
         let http = reqwest::Client::builder()
             .user_agent(concat!("Spaceport/", env!("CARGO_PKG_VERSION")))
+            // Addon URLs can hold debrid keys; a Referer would hand them to the next host.
+            .referer(false)
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                let first = attempt.previous().first().cloned();
+                let allowed = attempt.previous().len() <= MAX_REDIRECTS
+                    && first.is_some_and(|first| redirect_allowed(&first, attempt.url()));
+                if allowed {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            }))
             .timeout(Duration::from_secs(20))
             .build()
             .expect("failed to build HTTP client");
@@ -363,6 +422,56 @@ mod tests {
             err.to_string(),
             "could not reach Stremio: no connection (are you offline?)"
         );
+    }
+
+    #[test]
+    fn redirects_stay_public_and_account_calls_stay_on_strem_io() {
+        let url = |s: &str| reqwest::Url::parse(s).unwrap();
+        let addon = url("https://addon.example/key=abc/stream/movie/tt1.json");
+        assert!(redirect_allowed(
+            &addon,
+            &url("https://addon.example/v2/stream.json")
+        ));
+        assert!(redirect_allowed(
+            &addon,
+            &url("https://cdn.example.net/stream.json")
+        ));
+        assert!(!redirect_allowed(
+            &addon,
+            &url("http://cdn.example.net/stream.json")
+        ));
+        for local in [
+            "https://127.0.0.1:8080/stream/x",
+            "https://localhost/x",
+            "https://192.168.1.1/admin",
+            "https://10.0.0.5/",
+            "https://169.254.169.254/latest",
+            "https://[::1]/x",
+            "https://[fd00::1]/x",
+            "file:///C:/Windows/win.ini",
+        ] {
+            assert!(!redirect_allowed(&addon, &url(local)), "{local}");
+        }
+        // A local addon the user installed may redirect within itself.
+        let local_addon = url("http://127.0.0.1:7000/manifest.json");
+        assert!(redirect_allowed(
+            &local_addon,
+            &url("http://127.0.0.1:7000/v2/manifest.json")
+        ));
+
+        let api = url("https://api.strem.io/api/getUser");
+        assert!(redirect_allowed(
+            &api,
+            &url("https://www.strem.io/api/getUser")
+        ));
+        assert!(!redirect_allowed(
+            &api,
+            &url("https://evil.example/collect")
+        ));
+        assert!(!redirect_allowed(
+            &api,
+            &url("http://api.strem.io/api/getUser")
+        ));
     }
 
     #[test]

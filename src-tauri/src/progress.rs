@@ -17,7 +17,9 @@ use serde_json::{json, Map, Value};
 /// Positions in the first half minute are not worth resuming.
 const MIN_RESUME_SECONDS: f64 = 30.0;
 /// Within this share of the end a video counts as finished and starts over next time.
-const FINISHED_SHARE: f64 = 0.95;
+/// Watching this share also marks the video watched (as the official apps do), so the two
+/// must agree: a video marked watched must not resume near its end.
+pub const FINISHED_SHARE: f64 = 0.9;
 
 /// Formats a time as Stremio stores it: ISO 8601 in UTC with milliseconds.
 pub fn iso_time(time: SystemTime) -> String {
@@ -53,7 +55,11 @@ pub fn parse_iso_millis(text: &str) -> Option<i64> {
     let (year, month, day) = (d.next()?.ok()?, d.next()?.ok()?, d.next()?.ok()?);
     let (hms, millis) = match time.split_once('.') {
         Some((hms, frac)) => {
-            let frac: String = frac.chars().take(3).collect();
+            // Up to three digits of milliseconds; anything else is not a time Spaceport reads.
+            let frac = frac.get(..frac.len().min(3))?;
+            if frac.is_empty() || !frac.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
             let scale = 10i64.pow(3 - frac.len() as u32);
             (hms, frac.parse::<i64>().ok()? * scale)
         }
@@ -61,7 +67,13 @@ pub fn parse_iso_millis(text: &str) -> Option<i64> {
     };
     let mut t = hms.split(':').map(|p| p.parse::<i64>());
     let (h, m, sec) = (t.next()?.ok()?, t.next()?.ok()?, t.next()?.ok()?);
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || !(0..=9999).contains(&year)
+        || !(0..24).contains(&h)
+        || !(0..60).contains(&m)
+        || !(0..=60).contains(&sec)
+    {
         return None;
     }
     // Days since 1970-01-01 (inverse of the civil date conversion above).
@@ -287,25 +299,56 @@ impl ResumeStore {
         }
     }
 
-    pub fn load(&self) -> HashMap<String, VideoProgress> {
-        fs::read_to_string(&self.path)
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+    /// Every saved position. A missing file is an empty store; a file that cannot be parsed
+    /// is moved aside to `resume.bad.json` (so the next save cannot erase it) and counts as
+    /// empty; a file that cannot be read is an error, so nothing overwrites it.
+    fn read(&self) -> std::io::Result<HashMap<String, VideoProgress>> {
+        let text = match fs::read_to_string(&self.path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
+            Err(e) => return Err(e),
+        };
+        match serde_json::from_str(&text) {
+            Ok(all) => Ok(all),
+            Err(_) => {
+                fs::rename(&self.path, self.path.with_extension("bad.json"))?;
+                Ok(HashMap::new())
+            }
+        }
     }
 
+    pub fn load(&self) -> HashMap<String, VideoProgress> {
+        self.read().unwrap_or_default()
+    }
+
+    /// Writes all positions at once: to a temporary file of this process, flushed to disk,
+    /// then moved over the old file, so a crash or a second Spaceport never leaves half a file.
     pub fn save(&self, all: &HashMap<String, VideoProgress>) -> std::io::Result<()> {
+        use std::io::Write;
         if let Some(dir) = self.path.parent() {
             fs::create_dir_all(dir)?;
         }
-        let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, serde_json::to_vec(all)?)?;
+        let tmp = self
+            .path
+            .with_extension(format!("{}.tmp", std::process::id()));
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(&serde_json::to_vec(all)?)?;
+        file.sync_all()?;
+        drop(file);
         fs::rename(&tmp, &self.path)
     }
 
     pub fn update(&self, video_id: &str, progress: VideoProgress) -> std::io::Result<()> {
-        let mut all = self.load();
-        all.insert(video_id.to_string(), progress);
+        self.update_many([(video_id.to_string(), progress)])
+    }
+
+    /// Saves several positions with one read and one write.
+    pub fn update_many(
+        &self,
+        entries: impl IntoIterator<Item = (String, VideoProgress)>,
+    ) -> std::io::Result<()> {
+        let mut all = self.read()?;
+        all.extend(entries);
         self.save(&all)
     }
 
@@ -316,6 +359,16 @@ impl ResumeStore {
             .into_iter()
             .filter(|(id, _)| id == title_id || id.starts_with(&prefix))
             .collect()
+    }
+}
+
+/// A video set back to the start at `now`; newer than any older position elsewhere.
+pub fn rewound(now: i64) -> VideoProgress {
+    VideoProgress {
+        position: 0.0,
+        duration: 0.0,
+        updated: now,
+        source: None,
     }
 }
 
@@ -478,6 +531,47 @@ mod tests {
         let mine = store.for_title("tt1");
         assert_eq!(mine.len(), 3);
         assert_eq!(mine["tt1:1:2"].position, 200.0);
+        store
+            .update_many([("tt1:1:1".into(), p(10.0)), ("tt2".into(), p(20.0))])
+            .unwrap();
+        assert_eq!(store.load().len(), 5);
+        assert_eq!(store.load()["tt1:1:1"].position, 10.0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn odd_times_are_refused_not_panicked_on() {
+        for bad in [
+            "2026-10-21T10:00:00.\u{e9}\u{e9}Z",
+            "2026-10-21T10:00:00.Z",
+            "2026-10-21T25:00:00Z",
+            "99999999999999-01-01T00:00:00Z",
+            "2026-10-21T10:00:00.1aZ",
+        ] {
+            assert_eq!(parse_iso_millis(bad), None, "{bad}");
+        }
+        assert_eq!(parse_iso_millis("1970-01-01T00:00:01.5Z"), Some(1500));
+    }
+
+    #[test]
+    fn a_damaged_file_is_kept_aside_not_overwritten() {
+        let dir = std::env::temp_dir().join(format!("spaceport-resume-bad-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("resume.json"), "{\"tt1\": {\"position\": 1").unwrap();
+        let store = ResumeStore::new(&dir);
+        assert!(store.load().is_empty());
+        let p = VideoProgress {
+            position: 50.0,
+            duration: 100.0,
+            updated: 1,
+            source: None,
+        };
+        store.update("tt2", p).unwrap();
+        assert!(fs::read_to_string(dir.join("resume.bad.json"))
+            .unwrap()
+            .starts_with("{\"tt1\""));
+        assert_eq!(store.load().len(), 1);
         let _ = fs::remove_dir_all(&dir);
     }
 }

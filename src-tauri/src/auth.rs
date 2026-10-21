@@ -35,15 +35,21 @@ pub async fn login(
     Ok(Session::LoggedIn { user: result.user })
 }
 
+/// Stremio's error code for a session key it does not know (expired or signed out elsewhere).
+const SESSION_NOT_FOUND: i64 = 1;
+
 /// Restores the session saved by a previous run. A key that Stremio no longer accepts is
-/// removed; a network failure is returned as an error so the saved key is kept.
+/// removed; any other failure (offline, a passing server error) is returned as an error so the
+/// saved key is kept.
 pub async fn restore(api: &StremioApi, store: &dyn SecretStore) -> Result<Session, AuthError> {
     let Some(auth_key) = store.get(AUTH_KEY_NAME)? else {
         return Ok(Session::LoggedOut);
     };
     match api.get_user(&auth_key).await {
         Ok(user) => Ok(Session::LoggedIn { user }),
-        Err(ApiError::Stremio { .. }) => {
+        Err(ApiError::Stremio { code, ref message })
+            if code == SESSION_NOT_FOUND || message.to_lowercase().contains("session") =>
+        {
             store.delete(AUTH_KEY_NAME)?;
             Ok(Session::LoggedOut)
         }
@@ -156,6 +162,17 @@ mod tests {
         store.set(AUTH_KEY_NAME, "old").unwrap();
         assert_eq!(restore(&api, &store).await.unwrap(), Session::LoggedOut);
         assert_eq!(store.get(AUTH_KEY_NAME).unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn restore_keeps_key_on_other_stremio_errors() {
+        let store = MemoryStore::default();
+        store.set(AUTH_KEY_NAME, "k").unwrap();
+        let api = StremioApi::new(
+            mock_stremio(vec![r#"{"error":{"code":500,"message":"Internal error"}}"#]).await,
+        );
+        assert!(restore(&api, &store).await.is_err());
+        assert_eq!(store.get(AUTH_KEY_NAME).unwrap().as_deref(), Some("k"));
     }
 
     #[tokio::test]

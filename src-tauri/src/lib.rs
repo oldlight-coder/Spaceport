@@ -51,6 +51,14 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
+    /// Drops everything cached from the signed-in account: its addon collection, search
+    /// answers and series details.
+    fn forget_account(&self) {
+        self.sources.lock().unwrap().clear();
+        self.search_cache.lock().unwrap().clear();
+        self.metas.lock().unwrap().clear();
+    }
+
     fn auth_key(&self) -> Result<String, String> {
         auth::auth_key(self.secrets.as_ref()).map_err(|e| e.to_string())
     }
@@ -127,9 +135,13 @@ impl AppState {
 
 #[tauri::command]
 async fn auth_restore(state: tauri::State<'_, AppState>) -> Result<Session, String> {
-    auth::restore(&state.api, state.secrets.as_ref())
+    let session = auth::restore(&state.api, state.secrets.as_ref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if matches!(session, Session::LoggedOut) {
+        state.forget_account();
+    }
+    Ok(session)
 }
 
 #[tauri::command]
@@ -138,6 +150,8 @@ async fn auth_login(
     email: String,
     password: String,
 ) -> Result<Session, String> {
+    // Another account's addons (and the debrid keys in their links) must not carry over.
+    state.forget_account();
     auth::login(&state.api, state.secrets.as_ref(), &email, &password)
         .await
         .map_err(|e| e.to_string())
@@ -145,6 +159,7 @@ async fn auth_login(
 
 #[tauri::command]
 async fn auth_logout(state: tauri::State<'_, AppState>) -> Result<Session, String> {
+    state.forget_account();
     auth::logout(&state.api, state.secrets.as_ref())
         .await
         .map_err(|e| e.to_string())
@@ -227,19 +242,10 @@ async fn search_catalogs(state: tauri::State<'_, AppState>) -> Result<Vec<Catalo
     search_catalog_refs(&state).await
 }
 
-/// Every catalog that supports search, with Cinemeta's when no installed addon has one.
+/// Every catalog that supports search, from the cached addon list (which includes Cinemeta
+/// when it is not installed), so typing does not ask Stremio for the collection each time.
 async fn search_catalog_refs(state: &AppState) -> Result<Vec<CatalogRef>, String> {
-    let key = state.auth_key()?;
-    let mut sources = state.addon_collection(&key).await?;
-    if catalog::search_catalogs(&sources).is_empty() {
-        let manifest = state
-            .api
-            .fetch_manifest(CINEMETA_URL)
-            .await
-            .map_err(|e| e.to_string())?;
-        sources.insert(0, addons::builtin_descriptor(CINEMETA_URL, manifest));
-    }
-    Ok(catalog::search_catalogs(&sources))
+    Ok(catalog::search_catalogs(&state.sources().await?))
 }
 
 /// How long search answers are reused, and how many are kept.
@@ -468,8 +474,14 @@ async fn fetch_meta(
     let urls = addons::resource_sources(&sources, "meta", kind, id, preferred);
     let mut last_error = "none of your addons has details for this title".to_string();
     for transport_url in urls {
-        let url = catalog::resource_url(&transport_url, "meta", kind, id, &[])
-            .map_err(|e| e.to_string())?;
+        // One addon with an unusable link must not stop the others from being asked.
+        let url = match catalog::resource_url(&transport_url, "meta", kind, id, &[]) {
+            Ok(url) => url,
+            Err(e) => {
+                last_error = e.to_string();
+                continue;
+            }
+        };
         match state.api.addon_json(&url, ADDON_TIMEOUT).await {
             Ok(body) => {
                 if let Some(details) = meta::parse_meta(&body) {
@@ -500,7 +512,7 @@ async fn streams_fetch(
                 .iter()
                 .find(|a| a.transport_url == url)
                 .map(|a| a.name.clone())
-                .unwrap_or_else(|| url.clone());
+                .unwrap_or_else(|| addons::unnamed(&url));
             (name, url)
         })
         .collect();
@@ -648,7 +660,7 @@ async fn player_open(
                     .iter()
                     .find(|a| a.transport_url == url)
                     .map(|a| a.name.clone())
-                    .unwrap_or_else(|| url.clone());
+                    .unwrap_or_else(|| addons::unnamed(&url));
                 (name, url)
             })
             .collect();
@@ -733,7 +745,8 @@ async fn save_progress(app: tauri::AppHandle, report: player::WatchReport) {
         &now,
     );
     // Watching 90% or more marks the video watched, as the official apps do.
-    let mostly_watched = report.duration > 0.0 && report.position >= report.duration * 0.9;
+    let mostly_watched =
+        report.duration > 0.0 && report.position >= report.duration * progress::FINISHED_SHARE;
     if report.finished || mostly_watched {
         let videos = if report.target.video_id == title.id {
             Vec::new()
@@ -800,17 +813,12 @@ async fn watched_set(
         } else {
             videos
         };
-        for video in cleared {
-            let _ = state.resume.update(
-                &video,
-                progress::VideoProgress {
-                    position: 0.0,
-                    duration: 0.0,
-                    updated: progress::now_millis(),
-                    source: None,
-                },
-            );
-        }
+        let now = progress::now_millis();
+        let _ = state.resume.update_many(
+            cleared
+                .into_iter()
+                .map(|video| (video, progress::rewound(now))),
+        );
     }
     Ok(watched::read_marks(&stored, &item.video_ids))
 }
@@ -861,19 +869,16 @@ async fn continue_dismiss(
             .await
             .map_err(|e| e.to_string())?;
     }
-    for id in &ids {
-        for video in state.resume.for_title(id).into_keys() {
-            let _ = state.resume.update(
-                &video,
-                progress::VideoProgress {
-                    position: 0.0,
-                    duration: 0.0,
-                    updated: progress::now_millis(),
-                    source: None,
-                },
-            );
-        }
-    }
+    let now = progress::now_millis();
+    let videos: Vec<String> = ids
+        .iter()
+        .flat_map(|id| state.resume.for_title(id).into_keys())
+        .collect();
+    let _ = state.resume.update_many(
+        videos
+            .into_iter()
+            .map(|video| (video, progress::rewound(now))),
+    );
     Ok(())
 }
 

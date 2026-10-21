@@ -250,6 +250,15 @@ pub fn reorder(collection: &mut Vec<Value>, order: &[String]) -> Result<(), Addo
 }
 
 /// The configure page of a configurable addon: its base URL followed by `/configure`.
+/// A name for an addon whose manifest has none: its host. The full link may hold keys, so it
+/// is never shown or saved.
+pub fn unnamed(transport_url: &str) -> String {
+    reqwest::Url::parse(transport_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_else(|| "Unnamed addon".to_string())
+}
+
 pub fn configure_url(collection: &[Value], url: &str) -> Result<String, AddonError> {
     let addon = collection
         .iter()
@@ -262,7 +271,14 @@ pub fn configure_url(collection: &[Value], url: &str) -> Result<String, AddonErr
     let base = url
         .strip_suffix("/manifest.json")
         .ok_or(AddonError::NotAManifestUrl)?;
-    Ok(format!("{base}/configure"))
+    // The page opens in the system's handler for the link, so only a web page is allowed: an
+    // account's collection can hold any text, and other schemes would start other programs.
+    let page =
+        reqwest::Url::parse(&format!("{base}/configure")).map_err(|_| AddonError::InvalidUrl)?;
+    if !matches!(page.scheme(), "https" | "http") || page.host_str().is_none() {
+        return Err(AddonError::UnsupportedScheme);
+    }
+    Ok(page.to_string())
 }
 
 #[cfg(test)]
@@ -455,5 +471,31 @@ mod tests {
             configure_url(&c, CINEMETA),
             Err(AddonError::NotConfigurable)
         );
+    }
+
+    #[test]
+    fn unnamed_addons_show_their_host_only() {
+        assert_eq!(
+            unnamed("https://addon.example/realdebrid=KEY/manifest.json"),
+            "addon.example"
+        );
+        assert_eq!(unnamed("not a url"), "Unnamed addon");
+    }
+
+    #[test]
+    fn configure_pages_must_be_web_pages() {
+        for url in [
+            "ms-msdt:/id PCWDiagnostic/manifest.json",
+            "file://server/share/x/manifest.json",
+            "search-ms:query=x/manifest.json",
+        ] {
+            let c = vec![json!({
+                "transportUrl": url,
+                "manifest": {"id": "x", "version": "1.0.0", "name": "X",
+                             "resources": ["stream"], "types": ["movie"],
+                             "behaviorHints": {"configurable": true}}
+            })];
+            assert!(configure_url(&c, url).is_err(), "{url}");
+        }
     }
 }

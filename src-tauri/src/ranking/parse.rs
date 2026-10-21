@@ -93,7 +93,14 @@ pattern!(CHANNELS_CH, r"\b([2678])ch\b");
 
 pattern!(
     SIZE,
-    r"([0-9]+(?:[.,][0-9]+)?)\s?(tib|tb|gib|gb|mib|mb|kib|kb)\b"
+    r"([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?|[0-9]+(?:[.,][0-9]+)?)\s?(tib|tb|gib|gb|mib|mb|kib|kb)\b"
+);
+pattern!(GROUPED, r"^[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?$");
+pattern!(SIZE_UNIT_AHEAD, r"^\s?(?:tib|tb|gib|gb|mib|mb|kib|kb)\b");
+// Where the title ends in a release name: a year, an episode tag or a resolution.
+pattern!(
+    TITLE_END,
+    r"\b(?:19[0-9]{2}|20[0-9]{2}|s[0-9]{1,2}e[0-9]{1,3}|s[0-9]{1,2}|[0-9]{3,4}p|4k)\b"
 );
 pattern!(
     SEEDERS,
@@ -302,7 +309,12 @@ fn audio(text: &str) -> Vec<String> {
 }
 
 fn channels(text: &str) -> Option<String> {
-    if let Some(c) = CHANNELS.captures(text) {
+    // "7.1 GB" is a size, not a channel layout.
+    let layout = CHANNELS.captures_iter(text).find(|c| {
+        let end = c.get(0).map_or(0, |m| m.end());
+        !SIZE_UNIT_AHEAD.is_match(&text[end..])
+    });
+    if let Some(c) = layout {
         let (main, lfe) = (&c[1], &c[2]);
         if matches!(main, "1" | "2" | "5" | "6" | "7") {
             return Some(format!("{main}.{lfe}"));
@@ -324,7 +336,13 @@ fn size_bytes(text: &str) -> Option<u64> {
     let caps = marked
         .and_then(|t| SIZE.captures(t))
         .or_else(|| SIZE.captures(text))?;
-    let value: f64 = caps[1].replace(',', ".").parse().ok()?;
+    // "1,500" groups thousands; "1,5" is a decimal comma.
+    let number = &caps[1];
+    let value: f64 = if GROUPED.is_match(number) {
+        number.replace(',', "").parse().ok()?
+    } else {
+        number.replace(',', ".").parse().ok()?
+    };
     let unit = caps[2].to_ascii_lowercase();
     let factor: f64 = match unit.as_str() {
         "tb" | "tib" => 1024f64.powi(4),
@@ -339,7 +357,9 @@ fn seeders(text: &str) -> Option<u32> {
     SEEDERS.captures(text).and_then(|c| c[1].parse().ok())
 }
 
-fn source(text: &str) -> Option<String> {
+/// The release source. `tags_text` is where a camera recording is looked for (after the
+/// title, so a film called "Cam" is not one).
+fn source(text: &str, tags_text: &str) -> Option<String> {
     let checks: [(&LazyLock<Regex>, &str); 7] = [
         (&REMUX, "Remux"),
         (&BLURAY, "BluRay"),
@@ -350,11 +370,12 @@ fn source(text: &str) -> Option<String> {
         (&CAM, "CAM"),
     ];
     // A camera recording is what matters most when present, whatever else the name claims.
-    if CAM.is_match(text) {
+    if CAM.is_match(tags_text) {
         return Some("CAM".to_string());
     }
     checks
         .into_iter()
+        .filter(|(_, name)| *name != "CAM")
         .find(|(pattern, _)| pattern.is_match(text))
         .map(|(_, name)| name.to_string())
 }
@@ -382,13 +403,27 @@ fn group_in_line(line: &str) -> Option<String> {
     let tag = LAST_BRACKET.captures(line.trim())?[1].to_string();
     let lower = tag.to_ascii_lowercase();
     let is_checksum = tag.len() == 8 && tag.chars().all(|c| c.is_ascii_hexdigit());
-    let is_quality = resolution(&tag).is_some() || source(&tag).is_some();
+    let is_quality = resolution(&tag).is_some() || source(&tag, &tag).is_some();
     (!SITE_TAGS.contains(&lower.as_str()) && !is_checksum && !is_quality && valid_group(&tag))
         .then_some(tag)
 }
 
 fn release_group(lines: &[&str]) -> Option<String> {
     lines.iter().find_map(|line| group_in_line(line))
+}
+
+/// The part of a release or file name line after its title, when the line is one of
+/// `name_lines` and its title end can be found; other lines are returned whole.
+fn after_title<'a>(line: &'a str, name_lines: &[&str]) -> &'a str {
+    let trimmed = line.trim_start_matches(|c: char| !c.is_ascii() || c.is_whitespace());
+    if line.is_empty() || !name_lines.contains(&trimmed) {
+        return line;
+    }
+    let spaced = trimmed.replace('_', " ");
+    match TITLE_END.find(&spaced) {
+        Some(m) => &trimmed[m.start()..],
+        None => line,
+    }
 }
 
 fn languages(text: &str) -> Vec<String> {
@@ -445,6 +480,17 @@ pub fn parse(
         name_lines.push(filename);
     }
 
+    // The title itself can hold words that look like tags ("The Italian Job", "Cam"), so
+    // languages and camera recordings are looked for after where the title ends.
+    let tags_text = {
+        let mut parts = vec![name.to_string()];
+        for line in title.lines() {
+            parts.push(after_title(line, &name_lines).to_string());
+        }
+        parts.push(after_title(filename, &name_lines).to_string());
+        parts.join("\n").replace('_', " ")
+    };
+
     let (debrid, cached) = debrid(name);
     ParsedStream {
         resolution: resolution(&text),
@@ -456,10 +502,10 @@ pub fn parse(
         size_bytes: video_size.or_else(|| size_bytes(&text)),
         seeders: seeders(&text),
         release_group: release_group(&name_lines),
-        source: source(&text),
+        source: source(&text, &tags_text),
         cached,
         debrid,
-        languages: languages(&text),
+        languages: languages(&tags_text),
         multi_audio: MULTI.is_match(&text),
     }
 }
@@ -476,6 +522,55 @@ mod tests {
 
     fn p(name: &str, title: &str) -> ParsedStream {
         parse(Some(name), Some(title), None, None)
+    }
+
+    #[test]
+    fn title_words_are_not_tags() {
+        let job = p(
+            "[TB+] Torrentio\n1080p",
+            "The.Italian.Job.2003.1080p.BluRay.x264-GRP\n👤 40 💾 9.8 GB",
+        );
+        assert!(job.languages.is_empty());
+        assert_eq!(job.source.as_deref(), Some("BluRay"));
+        let cam = p(
+            "Torrentio\n1080p",
+            "Cam.2018.1080p.WEB-DL.DDP5.1.x264-NTG\n👤 12 💾 3 GB",
+        );
+        assert_eq!(cam.source.as_deref(), Some("WEB-DL"));
+        // Tags after the title still count, as do flags and words outside the release name.
+        let ita = p(
+            "Torrentio\n1080p",
+            "The.Italian.Job.2003.ITA.ENG.1080p.BluRay.x264\n🇮🇹 / 🇬🇧",
+        );
+        assert!(ita.languages.contains(&"it".to_string()));
+        assert!(ita.languages.contains(&"en".to_string()));
+        let real_cam = p(
+            "Torrentio\nCAM",
+            "Some.Movie.2024.HDCAM.x264\n👤 5 💾 1.4 GB",
+        );
+        assert_eq!(real_cam.source.as_deref(), Some("CAM"));
+        let ep = p(
+            "Torrentio\n1080p",
+            "Dark.S01E01.German.1080p.WEB.h264\n👤 9 💾 2 GB",
+        );
+        assert_eq!(ep.languages, ["de"]);
+    }
+
+    #[test]
+    fn sizes_with_thousands_and_decimal_commas() {
+        let mb = 1024u64 * 1024;
+        assert_eq!(size_bytes("💾 1,500 MB"), Some(1500 * mb));
+        assert_eq!(
+            size_bytes("💾 1,234.5 MB").map(|b| b / 1024),
+            Some(1_264_128)
+        );
+        assert_eq!(size_bytes("💾 1,5 GB"), Some(1536 * mb));
+    }
+
+    #[test]
+    fn a_size_is_not_a_channel_layout() {
+        assert_eq!(channels("WEB-DL.x264-GRP\n👤 12 💾 7.1 GB"), None);
+        assert_eq!(channels("DDP5.1.Atmos 💾 7.1 GB").as_deref(), Some("5.1"));
     }
 
     // The first eight cases are Torrentio + TorBox results for "Dark" S01E01 shared by the owner.
