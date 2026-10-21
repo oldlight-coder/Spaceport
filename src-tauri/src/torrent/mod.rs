@@ -59,20 +59,9 @@ pub fn magnet_uri(source: &TorrentSource) -> Result<String, String> {
         return Err("the torrent has an invalid info hash".to_string());
     }
     let mut uri = format!("magnet:?xt=urn:btih:{hash}");
-    let mut seen = HashSet::new();
-    for tracker in source
-        .sources
-        .iter()
-        .filter_map(|s| s.strip_prefix("tracker:"))
-    {
-        let tracker = tracker.trim();
-        let allowed = ["udp://", "http://", "https://"]
-            .iter()
-            .any(|scheme| tracker.starts_with(scheme));
-        if allowed && seen.insert(tracker.to_string()) {
-            uri.push_str("&tr=");
-            uri.push_str(&percent_encode(tracker));
-        }
+    for tracker in trackers(source) {
+        uri.push_str("&tr=");
+        uri.push_str(&percent_encode(&tracker));
     }
     Ok(uri)
 }
@@ -110,6 +99,46 @@ pub fn choose_file(files: &[(String, u64)], requested: Option<usize>) -> Option<
             .map(|(i, _)| i)
     };
     largest(true).or_else(|| largest(false))
+}
+
+/// Whether one part of a torrent's file name can only ever name a file inside the torrent's
+/// folder. librqbit rejects ".." and slashes, but on Windows "C:name" (a drive-relative path)
+/// would leave the cache folder, and device names such as "CON" do not name files at all.
+pub fn safe_name_part(part: &str) -> bool {
+    const DEVICES: &[&str] = &["con", "prn", "aux", "nul", "conin$", "conout$"];
+    let stem = part
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let device = DEVICES.contains(&stem.as_str())
+        || ((stem.starts_with("com") || stem.starts_with("lpt"))
+            && stem.len() == 4
+            && stem.as_bytes()[3].is_ascii_digit());
+    !part.is_empty()
+        && part != "."
+        && part != ".."
+        && !device
+        && !part.chars().any(|c| {
+            c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        })
+}
+
+/// Marks a torrent as in use while it opens, so the cache cleanup leaves it alone.
+struct InUse(Arc<AtomicUsize>);
+
+impl InUse {
+    fn new(counter: Arc<AtomicUsize>) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self(counter)
+    }
+}
+
+impl Drop for InUse {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 fn random_token() -> String {
@@ -229,7 +258,18 @@ impl TorrentEngine {
             cache::evictions(&entries, self.cache_limit.load(Ordering::SeqCst), now)
         };
         for hash in victims {
-            let removed = self.usage.lock().unwrap().remove(&hash);
+            // A torrent may have started opening again since the list was made.
+            let removed = {
+                let mut usage = self.usage.lock().unwrap();
+                let idle = usage
+                    .get(&hash)
+                    .is_some_and(|u| u.open_streams.load(Ordering::SeqCst) == 0);
+                if idle {
+                    usage.remove(&hash)
+                } else {
+                    None
+                }
+            };
             if let Some(usage) = removed {
                 let _ = session.delete(usage.handle.id().into(), true).await;
             }
@@ -345,33 +385,22 @@ impl TorrentEngine {
             .cloned()
             .ok_or(OpenError::UnknownToken)?;
         let failed = |e: String| OpenError::Failed(e);
+        let hash = source.info_hash.trim().to_ascii_lowercase();
+        // A torrent watched before is in use from now on, so the cache cleanup cannot delete
+        // it while it opens.
+        let _in_use = self.usage.lock().unwrap().get_mut(&hash).map(|u| {
+            u.last_used = Instant::now();
+            InUse::new(u.open_streams.clone())
+        });
         let session = self.session().await.map_err(failed)?;
         let magnet = magnet_uri(&source).map_err(failed)?;
-        #[allow(unused_mut)]
-        let mut options = AddTorrentOptions {
-            only_files: source.file_idx.map(|i| vec![i]),
-            overwrite: true,
-            ..AddTorrentOptions::default()
-        };
-        #[cfg(test)]
-        {
-            options.initial_peers = Some(self.initial_peers.lock().unwrap().clone());
-        }
-        let handle = match session
-            .add_torrent(AddTorrent::from_url(magnet), Some(options))
-            .await
-            .map_err(|e| failed(format!("could not add the torrent: {e}")))?
-        {
-            AddTorrentResponse::Added(_, handle)
-            | AddTorrentResponse::AlreadyManaged(_, handle) => handle,
-            AddTorrentResponse::ListOnly(_) => {
-                return Err(failed("the torrent was only listed".to_string()))
-            }
-        };
-        tokio::time::timeout(METADATA_TIMEOUT, handle.wait_until_initialized())
-            .await
-            .map_err(|_| failed("no peers sent the torrent's file list in time".to_string()))?
-            .map_err(|e| failed(format!("the torrent could not start: {e}")))?;
+        // Fetching the file list from peers can take forever for a dead torrent.
+        let (handle, managed_before) =
+            tokio::time::timeout(METADATA_TIMEOUT, self.add(&session, magnet, &source))
+                .await
+                .map_err(|_| {
+                    failed("no peers sent the torrent's file list in time".to_string())
+                })??;
 
         let files: Vec<(String, u64)> = handle
             .with_metadata(|m| {
@@ -383,8 +412,9 @@ impl TorrentEngine {
             .map_err(|e| failed(e.to_string()))?;
         let file = choose_file(&files, source.file_idx)
             .ok_or_else(|| failed("the torrent has no files".to_string()))?;
-        if source.file_idx != Some(file) {
-            // Only download the file being watched.
+        if managed_before || source.file_idx != Some(file) {
+            // Only download the file being watched (another episode of a season pack may have
+            // been selected before).
             let only: HashSet<usize> = [file].into();
             session
                 .update_only_files(&handle, &only)
@@ -421,6 +451,101 @@ impl TorrentEngine {
             reader: Box::new(CountedStream::new(stream, open_streams)),
         })
     }
+
+    /// Adds the torrent unless it is already in the session, and waits until its file list is
+    /// known. New torrents are first only listed, so their file names can be checked before
+    /// anything is written. Returns whether the torrent was already in the session.
+    async fn add(
+        &self,
+        session: &Arc<Session>,
+        magnet: String,
+        source: &TorrentSource,
+    ) -> Result<(Arc<ManagedTorrent>, bool), OpenError> {
+        let failed = |e: String| OpenError::Failed(e);
+        let hash = source.info_hash.trim().to_ascii_lowercase();
+        let base = || {
+            #[allow(unused_mut)]
+            let mut options = AddTorrentOptions {
+                only_files: source.file_idx.map(|i| vec![i]),
+                overwrite: true,
+                // The info hash names the folder; the torrent's own name could leave the cache.
+                sub_folder: Some(hash.clone()),
+                ..AddTorrentOptions::default()
+            };
+            #[cfg(test)]
+            {
+                options.initial_peers = Some(self.initial_peers.lock().unwrap().clone());
+            }
+            options
+        };
+        let listed = session
+            .add_torrent(
+                AddTorrent::from_url(magnet),
+                Some(AddTorrentOptions {
+                    list_only: true,
+                    ..base()
+                }),
+            )
+            .await
+            .map_err(|e| failed(format!("could not add the torrent: {e}")))?;
+        let (handle, managed_before) = match listed {
+            AddTorrentResponse::AlreadyManaged(_, handle) => (handle, true),
+            AddTorrentResponse::Added(_, handle) => (handle, false),
+            AddTorrentResponse::ListOnly(list) => {
+                let unsafe_name = list.info.iter_file_details().any(|f| {
+                    f.filename
+                        .iter_components()
+                        .any(|part| !safe_name_part(&part))
+                });
+                if unsafe_name {
+                    return Err(failed(
+                        "the torrent has file names that could leave the download folder"
+                            .to_string(),
+                    ));
+                }
+                let mut options = base();
+                // Peers that answered already, so the file list is not looked up again.
+                let mut peers = options.initial_peers.take().unwrap_or_default();
+                peers.extend(list.seen_peers);
+                options.initial_peers = Some(peers);
+                options.trackers = Some(trackers(source));
+                match session
+                    .add_torrent(AddTorrent::from_bytes(list.torrent_bytes), Some(options))
+                    .await
+                    .map_err(|e| failed(format!("could not add the torrent: {e}")))?
+                {
+                    AddTorrentResponse::Added(_, handle) => (handle, false),
+                    AddTorrentResponse::AlreadyManaged(_, handle) => (handle, true),
+                    AddTorrentResponse::ListOnly(_) => {
+                        return Err(failed("the torrent was only listed".to_string()))
+                    }
+                }
+            }
+        };
+        handle
+            .wait_until_initialized()
+            .await
+            .map_err(|e| failed(format!("the torrent could not start: {e}")))?;
+        Ok((handle, managed_before))
+    }
+}
+
+/// The addon's trackers that use a tracker protocol, each once.
+fn trackers(source: &TorrentSource) -> Vec<String> {
+    let mut seen = HashSet::new();
+    source
+        .sources
+        .iter()
+        .filter_map(|s| s.strip_prefix("tracker:"))
+        .map(str::trim)
+        .filter(|t| {
+            ["udp://", "http://", "https://"]
+                .iter()
+                .any(|s| t.starts_with(s))
+        })
+        .filter(|t| seen.insert(t.to_string()))
+        .map(str::to_string)
+        .collect()
 }
 
 #[cfg(test)]
@@ -453,6 +578,36 @@ mod tests {
              &tr=udp%3A%2F%2Ftracker.example%3A1337%2Fannounce\
              &tr=https%3A%2F%2Ft.example%2Fannounce%3Fx%3D1"
         );
+    }
+
+    #[test]
+    fn file_names_must_stay_in_the_folder() {
+        for ok in [
+            "Show.S01E01.mkv",
+            "Season 1",
+            "a.b.c",
+            "Concert.mkv",
+            "com10.txt",
+        ] {
+            assert!(safe_name_part(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "C:evil.dll",
+            "a:b",
+            "x\\y",
+            "x/y",
+            "CON",
+            "nul.txt",
+            "COM1",
+            "lpt9.mkv",
+            "a\u{0}b",
+            "what?",
+        ] {
+            assert!(!safe_name_part(bad), "{bad}");
+        }
     }
 
     #[test]

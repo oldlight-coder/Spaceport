@@ -9,7 +9,9 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWriteExt};
+use std::time::Duration;
+
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 /// A readable, seekable file and what the response needs to describe it.
@@ -36,6 +38,13 @@ pub enum OpenError {
 /// Largest request head accepted; mpv's are a few hundred bytes.
 const MAX_HEAD: usize = 16 * 1024;
 
+/// A response whose file sends nothing for this long is ended, so a torrent without peers
+/// cannot hold its stream open forever.
+const STALL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+/// Pause after a failed accept, so a lasting error does not spin the loop.
+const ACCEPT_RETRY: Duration = Duration::from_millis(100);
+
 /// Binds to a free port on 127.0.0.1 only and serves until the runtime stops.
 pub async fn start(opener: Opener) -> std::io::Result<SocketAddr> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
@@ -43,6 +52,7 @@ pub async fn start(opener: Opener) -> std::io::Result<SocketAddr> {
     tokio::spawn(async move {
         loop {
             let Ok((socket, peer)) = listener.accept().await else {
+                tokio::time::sleep(ACCEPT_RETRY).await;
                 continue;
             };
             // Bound to loopback, so this cannot happen; refuse anything else regardless.
@@ -148,7 +158,11 @@ fn content_type(name: &str) -> &'static str {
     }
 }
 
-async fn respond_status(socket: &mut TcpStream, status: &str, extra: &str) -> std::io::Result<()> {
+async fn respond_status<W: AsyncWrite + Unpin>(
+    socket: &mut W,
+    status: &str,
+    extra: &str,
+) -> std::io::Result<()> {
     let reply =
         format!("HTTP/1.1 {status}\r\n{extra}Content-Length: 0\r\nConnection: close\r\n\r\n");
     socket.write_all(reply.as_bytes()).await
@@ -176,17 +190,39 @@ async fn serve(mut socket: TcpStream, opener: Opener) -> std::io::Result<()> {
     let Some(head) = read_head(&mut socket).await? else {
         return Ok(());
     };
-    let Some(request) = parse_request(&head) else {
-        return respond_status(&mut socket, "400 Bad Request", "").await;
+    let (mut incoming, mut outgoing) = socket.into_split();
+    // mpv sends nothing more after its request, so the read side ends only when it hangs up
+    // (a seek or a closed player). The response, and with it the torrent stream and the
+    // librqbit resources it holds, is then dropped instead of waiting for data nobody reads.
+    let hung_up = async {
+        let mut scratch = [0u8; 256];
+        while let Ok(n) = incoming.read(&mut scratch).await {
+            if n == 0 {
+                break;
+            }
+        }
+    };
+    tokio::select! {
+        result = respond(&head, opener, &mut outgoing) => result,
+        () = hung_up => Ok(()),
+    }
+}
+
+async fn respond<W: AsyncWrite + Unpin>(
+    head: &str,
+    opener: Opener,
+    socket: &mut W,
+) -> std::io::Result<()> {
+    let socket = &mut *socket;
+    let Some(request) = parse_request(head) else {
+        return respond_status(socket, "400 Bad Request", "").await;
     };
     let Some(token) = request.token else {
-        return respond_status(&mut socket, "404 Not Found", "").await;
+        return respond_status(socket, "404 Not Found", "").await;
     };
     let mut opened = match opener(token).await {
         Ok(opened) => opened,
-        Err(OpenError::UnknownToken) => {
-            return respond_status(&mut socket, "404 Not Found", "").await
-        }
+        Err(OpenError::UnknownToken) => return respond_status(socket, "404 Not Found", "").await,
         Err(OpenError::Failed(reason)) => {
             // The reason goes in the status line, where mpv's log shows it.
             let reason: String = reason
@@ -195,7 +231,7 @@ async fn serve(mut socket: TcpStream, opener: Opener) -> std::io::Result<()> {
                 .take(200)
                 .collect();
             let status = format!("503 {reason}");
-            return respond_status(&mut socket, &status, "").await;
+            return respond_status(socket, &status, "").await;
         }
     };
     let len = opened.len;
@@ -203,7 +239,7 @@ async fn serve(mut socket: TcpStream, opener: Opener) -> std::io::Result<()> {
         Ok(range) => range,
         Err(()) => {
             let extra = format!("Content-Range: bytes */{len}\r\n");
-            return respond_status(&mut socket, "416 Range Not Satisfiable", &extra).await;
+            return respond_status(socket, "416 Range Not Satisfiable", &extra).await;
         }
     };
     let (status, start, count, content_range) = match range {
@@ -225,7 +261,16 @@ async fn serve(mut socket: TcpStream, opener: Opener) -> std::io::Result<()> {
     }
     opened.reader.seek(std::io::SeekFrom::Start(start)).await?;
     let mut body = (&mut opened.reader).take(count);
-    tokio::io::copy(&mut body, &mut socket).await?;
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = tokio::time::timeout(STALL_TIMEOUT, body.read(&mut buf))
+            .await
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "no data"))??;
+        if n == 0 {
+            break;
+        }
+        socket.write_all(&buf[..n]).await?;
+    }
     socket.flush().await
 }
 
@@ -284,6 +329,63 @@ mod tests {
         assert_eq!(parse_request("GET / HTTP/1.1").unwrap().token, None);
     }
 
+    /// A file whose data never arrives, like a torrent piece nobody has. Flags when dropped.
+    struct Stuck(Arc<std::sync::atomic::AtomicBool>);
+
+    static STUCK_DROPPED: std::sync::LazyLock<Arc<std::sync::atomic::AtomicBool>> =
+        std::sync::LazyLock::new(Default::default);
+
+    impl Drop for Stuck {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl AsyncRead for Stuck {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+            _: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Pending
+        }
+    }
+
+    impl AsyncSeek for Stuck {
+        fn start_seek(self: Pin<&mut Self>, _: std::io::SeekFrom) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn poll_complete(
+            self: Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<u64>> {
+            std::task::Poll::Ready(Ok(0))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_player_hanging_up_frees_the_stream() {
+        let addr = start(test_opener()).await.unwrap();
+        let mut socket = TcpStream::connect(addr).await.unwrap();
+        socket
+            .write_all(b"GET /stream/stuck HTTP/1.1\r\n\r\n")
+            .await
+            .unwrap();
+        let mut head = [0u8; 12];
+        socket.read_exact(&mut head).await.unwrap();
+        assert_eq!(&head, b"HTTP/1.1 200");
+        assert!(!STUCK_DROPPED.load(std::sync::atomic::Ordering::SeqCst));
+        drop(socket);
+        for _ in 0..50 {
+            if STUCK_DROPPED.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("the stream was still held after the player hung up");
+    }
+
     fn test_opener() -> Opener {
         Arc::new(|token: String| -> OpenFuture {
             Box::pin(async move {
@@ -297,6 +399,11 @@ mod tests {
                         })
                     }
                     "broken" => Err(OpenError::Failed("no peers".into())),
+                    "stuck" => Ok(Opened {
+                        len: 1_000_000,
+                        name: "Movie.mkv".into(),
+                        reader: Box::new(Stuck(STUCK_DROPPED.clone())),
+                    }),
                     _ => Err(OpenError::UnknownToken),
                 }
             })
