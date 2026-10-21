@@ -31,7 +31,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 ## M4. Player
 - [x] libmpv embedded in the window, hardware decoding on
 - [x] Plays direct and debrid links; auto-plays top stream, falls back to next on failure
-- [ ] Controls: play/pause, seek, volume, fullscreen, audio track, speed
+- [x] Controls: play/pause, seek, volume, fullscreen, audio track, speed
 - **Acceptance:** a debrid or direct 4K HDR file plays smoothly; killing a stream URL makes the
   player move to the next ranked stream.
 
@@ -75,6 +75,11 @@ pass on Windows. The owner tests each milestone before the next one starts.
   choosing embedded subtitle tracks and subtitles from addons (the protocol's `subtitles`
   resource) in the player. Local subtitle files and delay/style controls stay in M6. The player
   also gained a Source menu to switch between the ranked streams while watching.
+- 2026-10-21: Torrent engine and DHT (owner's choice): librqbit accepts no incoming peer
+  connections and uses no UPnP or local peer discovery. DHT is on by default, with a Settings
+  switch (Torrents > Find peers with DHT) for trackers-only mode. DHT's UDP socket is the only
+  thing that listens on the network, so M5's check reads "nothing but DHT listens on a
+  non-loopback address" (and nothing at all with DHT off). The stream server is 127.0.0.1 only.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -144,3 +149,10 @@ pass on Windows. The owner tests each milestone before the next one starts.
   holds the chosen point and shows "Seeking…" until playback gets there, and warns when a stream
   cannot seek beyond what has loaded. Addon subtitles fetched in parallel (stremio/subtitles.rs).
   (87624cb)
+- 2026-10-21: M4 controls confirmed by owner (audio/subtitle/source menus, seeking). (e7f1dcc)
+- 2026-10-21: M4 accepted by owner; moving on to M5.
+- 2026-10-21: M5 torrent engine implemented (not yet ticked: needs a Windows check). librqbit
+  starts on the first torrent play; torrents get a random-token URL on the 127.0.0.1 stream
+  server, which adds the magnet (addon trackers included), picks the file, downloads only it
+  and serves range requests. End-to-end test with a local seeder passed (IPv4-patched copy here,
+  as this sandbox has no IPv6); it skips itself where IPv6 sockets are unavailable.

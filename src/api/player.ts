@@ -9,9 +9,11 @@ export type PlayerEvent =
   | { kind: "failed"; message: string }
   | { kind: "closed" };
 
+/** A stream to try: a web link, or a torrent for the built-in engine. */
 export interface Candidate {
-  url: string;
   label: string;
+  url: string | null;
+  torrent: { infoHash: string; fileIdx: number | null; sources: string[] } | null;
 }
 
 /** Fallbacks beyond this many are not worth waiting through. */
@@ -19,14 +21,21 @@ const MAX_CANDIDATES = 10;
 
 /**
  * The streams to try, in order: `first` (when the user picked one) and then the rest of the
- * ranked list. Only direct and debrid links for now; torrents need the engine from M5.
+ * ranked list. Direct and debrid links play as they are; torrents go through the engine.
  */
 export function candidatesFrom(ranked: RankedStream[], first?: RankedStream): Candidate[] {
   const ordered = first ? [first, ...ranked.filter((s) => s !== first)] : ranked;
   return ordered
-    .filter((s) => s.url)
+    .filter((s) => s.url || s.infoHash)
     .slice(0, MAX_CANDIDATES)
-    .map((s) => ({ url: s.url!, label: (s.name ?? s.addonName).replace(/\s+/g, " ") }));
+    .map((s) => ({
+      label: (s.name ?? s.addonName).replace(/\s+/g, " "),
+      url: s.url,
+      torrent:
+        !s.url && s.infoHash
+          ? { infoHash: s.infoHash, fileIdx: s.fileIdx, sources: s.sources }
+          : null,
+    }));
 }
 
 /** `type` and `videoId` identify the video, for fetching subtitles from addons. */

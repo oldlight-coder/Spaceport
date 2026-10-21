@@ -27,6 +27,9 @@ pub struct Settings {
     pub filters: StreamFilters,
     /// Profile picture as a `data:image/...` URL, kept only on this computer.
     pub avatar: Option<String>,
+    /// Let the torrent engine use DHT to find peers. Its UDP socket is the only thing in
+    /// Spaceport that listens on the network; off means trackers only.
+    pub torrent_dht: bool,
 }
 
 impl Default for Settings {
@@ -37,6 +40,7 @@ impl Default for Settings {
             preferred_resolution: 2160,
             filters: StreamFilters::default(),
             avatar: None,
+            torrent_dht: true,
         }
     }
 }

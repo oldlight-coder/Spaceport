@@ -43,7 +43,8 @@ const BASE_OPTIONS: &[(&str, &str)] = &[
     ("input-default-bindings", "no"),
     ("input-vo-keyboard", "no"),
     ("input-cursor", "no"),
-    ("network-timeout", "20"),
+    // Torrents may need this long to fetch their file list before the first byte arrives.
+    ("network-timeout", "30"),
 ];
 
 /// Properties sent to the controls window, with the format each is read in.

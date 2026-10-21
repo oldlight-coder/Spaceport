@@ -875,3 +875,21 @@ button.chip.active {
   padding: 0 14px;
   font-size: 20px;
 }
+
+label.toggle {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 15px;
+}
+
+label.toggle input {
+  margin-top: 4px;
+  padding: 0;
+}
+
+label.toggle > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

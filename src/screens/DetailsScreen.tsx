@@ -66,13 +66,7 @@ function Details({ meta }: { meta: MetaDetails }) {
   async function play(target: StreamTarget, ranked: RankedStream[], first?: RankedStream) {
     const candidates = candidatesFrom(ranked, first);
     if (candidates.length === 0) {
-      const torrents = ranked.some((s) => s.infoHash);
-      setNotice({
-        text: torrents
-          ? "Only torrent streams were found, and torrent playback is not built yet."
-          : "No playable stream was found.",
-        error: true,
-      });
+      setNotice({ text: "No playable stream was found.", error: true });
       return;
     }
     setNotice({ text: `Starting ${candidates[0].label}…` });

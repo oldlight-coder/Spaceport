@@ -12,6 +12,7 @@ export interface Settings {
   preferredResolution: number;
   filters: StreamFilters;
   avatar: string | null;
+  torrentDht: boolean;
 }
 
 export const getSettings = () => invoke<Settings>("settings_get");

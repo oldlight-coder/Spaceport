@@ -189,6 +189,24 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
       </section>
 
       <section className="settings-section">
+        <h2>Torrents</h2>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={settings.torrentDht}
+            onChange={(e) => update({ torrentDht: e.target.checked })}
+          />
+          <span>
+            <strong>Find peers with DHT</strong>
+            <span className="muted small">
+              Helps torrents without trackers start. DHT keeps one network port open; turn it off
+              to use trackers only. Takes effect after restarting Spaceport.
+            </span>
+          </span>
+        </label>
+      </section>
+
+      <section className="settings-section">
         <AddonsScreen />
       </section>
     </div>

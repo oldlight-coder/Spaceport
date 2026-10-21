@@ -5,9 +5,10 @@ mod ranking;
 mod secrets;
 mod settings;
 mod stremio;
+mod torrent;
 
 use serde_json::Value;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
@@ -31,6 +32,7 @@ pub(crate) struct AppState {
     settings: Mutex<Settings>,
     settings_store: SettingsStore,
     player: player::Player,
+    torrents: Arc<torrent::TorrentEngine>,
 }
 
 impl AppState {
@@ -299,6 +301,15 @@ async fn streams_fetch(
     ))
 }
 
+/// A stream to try, as the UI sends it: a web link, or a torrent for the built-in engine.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlayCandidate {
+    label: String,
+    url: Option<String>,
+    torrent: Option<torrent::TorrentSource>,
+}
+
 /// Plays the first of the ranked candidates in the embedded player and falls back to the next
 /// on failure, then opens the controls window and looks up subtitles from the addons. Async
 /// because creating a window from a synchronous command deadlocks on Windows; the video window
@@ -306,18 +317,32 @@ async fn streams_fetch(
 #[tauri::command]
 async fn player_open(
     app: tauri::AppHandle,
-    candidates: Vec<player::Candidate>,
+    candidates: Vec<PlayCandidate>,
     title: String,
     kind: String,
     video_id: String,
 ) -> Result<(), String> {
-    let candidates: Vec<player::Candidate> = candidates
-        .into_iter()
-        .filter(|c| c.url.starts_with("https://") || c.url.starts_with("http://"))
-        .collect();
-    if candidates.is_empty() {
-        return Err("none of these streams can be played yet".to_string());
+    let engine = app.state::<AppState>().torrents.clone();
+    let mut playable = Vec::new();
+    for candidate in candidates {
+        let url = match (candidate.url, candidate.torrent) {
+            (Some(url), _) if url.starts_with("https://") || url.starts_with("http://") => url,
+            // Torrents play through the local stream server.
+            (None, Some(source)) => match engine.register(source).await {
+                Ok(url) => url,
+                Err(_) => continue,
+            },
+            _ => continue,
+        };
+        playable.push(player::Candidate {
+            url,
+            label: candidate.label,
+        });
     }
+    if playable.is_empty() {
+        return Err("none of these streams can be played".to_string());
+    }
+    let candidates = playable;
     let settings = app.state::<AppState>().settings.lock().unwrap().clone();
     let audio_languages = language::mpv_list(&settings.audio_languages);
     let (sender, receiver) = std::sync::mpsc::channel();
@@ -396,6 +421,7 @@ fn settings_set(state: tauri::State<'_, AppState>, settings: Settings) -> Result
         .settings_store
         .save(&settings)
         .map_err(|e| e.to_string())?;
+    state.torrents.set_dht(settings.torrent_dht);
     *state.settings.lock().unwrap() = settings.clone();
     Ok(settings)
 }
@@ -422,13 +448,17 @@ pub fn run() {
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let settings_store = SettingsStore::new(&config_dir);
+            let settings = settings_store.load();
+            let torrent_cache = app.path().app_cache_dir()?.join("torrents");
+            let torrents = torrent::TorrentEngine::new(torrent_cache, settings.torrent_dht);
             app.manage(AppState {
                 api: StremioApi::new(DEFAULT_BASE_URL),
                 secrets: Box::new(KeyringStore),
                 sources: Mutex::new(Vec::new()),
-                settings: Mutex::new(settings_store.load()),
+                settings: Mutex::new(settings),
                 settings_store,
                 player: player::Player::default(),
+                torrents,
             });
             Ok(())
         })
