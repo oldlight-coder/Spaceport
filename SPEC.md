@@ -66,7 +66,6 @@ or hosted services of its own.
   whichever Spaceport window has focus.
 - Look: Material You (Material 3) styling with a chosen accent color, light, dark or follow the
   system theme, styled scrollbars, smooth scrolling and skeleton loading placeholders.
-- Deferred for now: ratings beyond IMDb, and an Android version.
 
 ## 9. Technology
 | Part | Choice | Notes |

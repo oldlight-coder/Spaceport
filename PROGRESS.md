@@ -60,8 +60,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Settings page (filters, languages, subtitle style, auto-skip, cache size)
 - [x] Error states (no addons, no streams, offline)
 - [x] README with build steps; final privacy check of all network calls
-- **Acceptance:** fresh Windows install from the NSIS installer works end to end: login, browse,
-  pick, play, resume, skip intro.
+- [x] **Acceptance:** fresh Windows install from the NSIS installer works end to end: login,
+  browse, pick, play, resume, skip intro. (Passed 2026-10-21.)
 
 ## M9. Conveniences
 - [x] Remove "The picture stays on this computer" from Settings
@@ -85,10 +85,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Autocomplete: title suggestions under the search field while typing, arrow keys and Enter
 - [x] Forgiving search: typos and partial words still find titles ("Best matches" row)
 - **Acceptance:** misspelled titles such as "breakng bad" or "the mandolorian" are found.
-
-## Deferred (owner's choice, 2026-10-21)
-- Ratings beyond IMDb (Rotten Tomatoes via MDBList or OMDb)
-- Android version
 
 ## Decisions
 (Record any spec changes agreed with the owner here.)
@@ -119,6 +115,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   secret storage and windows are Windows-specific), so it comes last as M12 with its own scope.
 - 2026-10-21: Ratings beyond IMDb and the Android version are deferred (owner's choice); they
   moved out of the milestone list to "Deferred".
+- 2026-10-21: Ratings beyond IMDb (Rotten Tomatoes) and the Android version are dropped from the
+  plan (owner's choice); removed from SPEC and from the deferred list.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -282,3 +280,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
   always for the search page, for autocomplete only when the query finds under 3), caching
   answers for 10 minutes. Suggestions under the search field, "Best matches" row on the page.
 - 2026-10-21: M11 accepted by the owner on Windows; ticked.
+- 2026-10-21: M8 acceptance passed on a fresh Windows install from the NSIS installer; M8 ticked. All milestones complete.
