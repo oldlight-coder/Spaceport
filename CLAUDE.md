@@ -37,8 +37,10 @@ is not.
 - Prerequisites: VS 2022 Build Tools (Desktop C++), Rust (MSVC), Node 22 + pnpm, 7-Zip on PATH,
   CMake.
 - `pnpm install`, `pnpm run setup` (fetches libmpv into `src-tauri/lib`, checked against the
-  SHA-256 in `scripts/libmpv.json`), `pnpm tauri build`.
+  archive and DLL SHA-256s in `scripts/libmpv.json`), `pnpm tauri build` (refuses to bundle a
+  DLL that does not match the pin).
 - To move to a newer libmpv: `pnpm run setup -- --pin`, which checks the download against the
-  digest GitHub publishes for the release asset and rewrites `scripts/libmpv.json`; commit it.
+  digest GitHub publishes for the release asset, records the archive and DLL hashes in
+  `scripts/libmpv.json`; commit it.
 - Installer: `src-tauri/target/release/bundle/nsis/Spaceport_<version>_x64-setup.exe`.
 - Keep this section and `README.md` accurate whenever setup changes.

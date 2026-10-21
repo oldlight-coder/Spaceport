@@ -19,13 +19,16 @@ The installer is written to
 
 `pnpm run setup` downloads the libmpv developer build named in `scripts/libmpv.json` from the
 official [shinchiro/mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake) releases,
-refuses it unless its SHA-256 matches the pinned one, and extracts `libmpv-2.dll` into
-`src-tauri/lib` with 7-Zip. The installer ships that DLL next to the app. Run it again after a
-pin change; it does nothing when the pinned file is already in place.
+refuses it unless its SHA-256 matches the pinned one, extracts `libmpv-2.dll` with 7-Zip and
+installs it into `src-tauri/lib` only if the DLL's own SHA-256 (also pinned) matches. The
+installer ships that DLL next to the app; `pnpm tauri build` checks it against the pin first
+and stops if it differs. Run setup again after a pin change; it does nothing when the pinned
+DLL is already in place.
 
 To pin a build (first time, or to update): `pnpm run setup -- --pin` takes the newest release, or
 `pnpm run setup -- --pin <tag>` a specific one. It checks the download against the SHA-256 GitHub
-publishes for the asset and writes name and hash to `scripts/libmpv.json`. Commit that file.
+publishes for the asset and writes its name and hash, and the DLL's hash, to
+`scripts/libmpv.json`. Commit that file.
 
 The shinchiro builds are GPL-licensed; Spaceport loads the DLL at runtime and is meant for personal
 use.
@@ -63,14 +66,22 @@ contacts only:
 - The addons you installed: their manifests, catalogs, metadata, streams and subtitles.
 - What those addons point to: poster and background images, stream links (for debrid addons,
   the debrid service's download servers), subtitle files, and for torrents the trackers listed
-  with the stream and peers found through them or through DHT (Settings > Torrents).
+  with the stream and peers found through them or through DHT (Settings > Torrents). DHT
+  starts from librqbit's two bootstrap nodes, `dht.transmissionbt.com` and
+  `dht.libtorrent.org`.
 - For anime skip times: Kitsu (`kitsu.app`) or AniList (`graphql.anilist.co`) to find the
   MyAnimeList id, and `api.aniskip.com`.
 - An addon's configure page opens in your own browser, not in Spaceport.
+
+Addon requests may follow a redirect only within the same host or to another public https
+host (never to this computer or the local network), and Stremio account requests only within
+`strem.io`; no Referer header is sent. Addon configure pages open only when they are web
+links. Torrents whose file names could point outside the download folder are refused.
 
 Nothing downloads or runs code at runtime: mpv starts with `config=no`, `load-scripts=no` and
 `ytdl=no`. The only listening sockets are the torrent stream server on 127.0.0.1 and, while DHT
 is on, DHT's UDP socket; the engine accepts no incoming peer connections and uses no UPnP or
 local peer discovery. Images load without a referrer. Request errors never include URLs, since
-addon and debrid links can carry API keys, and those links are never written to disk.
+addon and debrid links can carry API keys, and Spaceport never writes addon, stream or debrid
+links to disk. (Poster links of titles marked Watching are kept, to show them offline.)
 

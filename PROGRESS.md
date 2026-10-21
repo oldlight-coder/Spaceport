@@ -117,6 +117,11 @@ pass on Windows. The owner tests each milestone before the next one starts.
   moved out of the milestone list to "Deferred".
 - 2026-10-21: Ratings beyond IMDb (Rotten Tomatoes) and the Android version are dropped from the
   plan (owner's choice); removed from SPEC and from the deferred list.
+- 2026-10-21: Pre-merge review (owner's request): 39 findings from four reviews, 35 fixed, 4 not:
+  stream URLs from the UI are not tied to addon answers (needs code already running in the
+  window, which the CSP prevents), the possible fullscreen freeze was unconfirmed (lock now
+  released early anyway), simultaneous addon edits (the UI blocks them; search now uses the
+  cached list) and stale settings copies (the settings page now reloads when opened).
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -281,3 +286,10 @@ pass on Windows. The owner tests each milestone before the next one starts.
   answers for 10 minutes. Suggestions under the search field, "Best matches" row on the page.
 - 2026-10-21: M11 accepted by the owner on Windows; ticked.
 - 2026-10-21: M8 acceptance passed on a fresh Windows install from the NSIS installer; M8 ticked. All milestones complete.
+- 2026-10-21: Pre-merge review fixes: torrents (unsafe file names refused, hash-named folders,
+  streams freed when the player hangs up, whole-start timeout, in-use marking, season packs),
+  player (own-session teardown, cleanup on failed start, background subtitle loads, save on
+  exit), backend (redirect and Referer limits, web-only configure links, account caches cleared,
+  session kept on other errors, safe resume.json, ranking title words, sizes), frontend (search
+  Enter crash, error screen, play/load races, stable player keys, size field, settings merges),
+  build (libmpv DLL hash pinned and checked before bundling). 197 tests pass.
