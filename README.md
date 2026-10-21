@@ -52,3 +52,25 @@ Torrents are downloaded to the app cache folder (`%LOCALAPPDATA%\com.spaceport.c
 Windows). Torrents you are not watching are deleted once the cache passes the size set in
 Settings (10 GB by default), and the whole folder is deleted when Spaceport closes. The player
 reads torrents through a stream server bound to 127.0.0.1 only.
+
+## Network and privacy
+
+Spaceport has no accounts, servers, telemetry, crash reports or auto-updater of its own. It
+contacts only:
+
+- `api.strem.io`: sign-in, your addon collection, library and watch progress.
+- Cinemeta (`v3-cinemeta.strem.io`), the default catalog and metadata addon.
+- The addons you installed: their manifests, catalogs, metadata, streams and subtitles.
+- What those addons point to: poster and background images, stream links (for debrid addons,
+  the debrid service's download servers), subtitle files, and for torrents the trackers listed
+  with the stream and peers found through them or through DHT (Settings > Torrents).
+- For anime skip times: Kitsu (`kitsu.app`) or AniList (`graphql.anilist.co`) to find the
+  MyAnimeList id, and `api.aniskip.com`.
+- An addon's configure page opens in your own browser, not in Spaceport.
+
+Nothing downloads or runs code at runtime: mpv starts with `config=no`, `load-scripts=no` and
+`ytdl=no`. The only listening sockets are the torrent stream server on 127.0.0.1 and, while DHT
+is on, DHT's UDP socket; the engine accepts no incoming peer connections and uses no UPnP or
+local peer discovery. Images load without a referrer. Request errors never include URLs, since
+addon and debrid links can carry API keys, and those links are never written to disk.
+

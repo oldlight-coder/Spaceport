@@ -58,8 +58,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 
 ## M8. Polish and release
 - [x] Settings page (filters, languages, subtitle style, auto-skip, cache size)
-- [ ] Error states (no addons, no streams, offline)
-- [ ] README with build steps; final privacy check of all network calls
+- [x] Error states (no addons, no streams, offline)
+- [x] README with build steps; final privacy check of all network calls
 - **Acceptance:** fresh Windows install from the NSIS installer works end to end: login, browse,
   pick, play, resume, skip intro.
 
@@ -80,6 +80,9 @@ pass on Windows. The owner tests each milestone before the next one starts.
   switch (Torrents > Find peers with DHT) for trackers-only mode. DHT's UDP socket is the only
   thing that listens on the network, so M5's check reads "nothing but DHT listens on a
   non-loopback address" (and nothing at all with DHT off). The stream server is 127.0.0.1 only.
+- 2026-10-21: Privacy check (owner's choice): hosts an installed addon points to (images, stream
+  links and debrid download servers, subtitle files, torrent trackers and peers) count as part of
+  that addon. They are listed in the README's "Network and privacy" section; no restriction added.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -205,3 +208,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   failed pages and sign-in retry when the connection returns, network errors say "no connection"
   or "timed out", empty catalogs/search/streams offer "Manage addons", and Play explains why no
   stream started (no stream addons, none answered, none found, all hidden by filters).
+- 2026-10-21: M8 error states accepted by the owner. Privacy check done: every hard-coded host is
+  on the allowed list, no logging, no updater or telemetry, mpv loads no scripts, secrets only in
+  Credential Manager, no links on disk. README gained a "Network and privacy" section.
