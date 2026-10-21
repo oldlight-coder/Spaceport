@@ -56,7 +56,8 @@ or hosted services of its own.
 ## 8. Additions agreed with the owner (2026-10-21)
 - Continue Watching: remove one title or clear the whole row.
 - Search history: recent searches, each removable, with a Clear all.
-- Library split into Movies and Series.
+- Library in tabs: Watching, Movies and Series. Titles can be marked "Watching" from their
+  page; the mark is kept on this computer.
 - Player keys: J/Left back 10 s, K/Space pause, L/Right forward 10 s, Up/Down volume; they work
   whichever Spaceport window has focus.
 - Look: Material You (Material 3) styling with a chosen accent color, light, dark or follow the

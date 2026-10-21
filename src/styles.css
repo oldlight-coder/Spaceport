@@ -1059,11 +1059,6 @@ button.text-button {
   font-weight: 500;
 }
 
-.library-group h3 {
-  font-size: 16px;
-  margin: 0 0 12px;
-}
-
-.library-group + .library-group {
-  margin-top: 28px;
+.library-tabs {
+  margin-bottom: 20px;
 }

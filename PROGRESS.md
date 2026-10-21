@@ -67,7 +67,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [ ] Remove "The picture stays on this computer" from Settings
 - [ ] Continue Watching: remove one title, clear all
 - [ ] Search history with single remove and Clear all
-- [ ] Library split into Movies and Series
+- [ ] Library tabs: Watching, Movies, Series (and other types)
+- [ ] Mark titles as "Watching" from their page
 - [ ] Player keys work from any Spaceport window (J/K/L, arrows, volume)
 - **Acceptance:** each item works in the installed app.
 
@@ -245,3 +246,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   under the search field with remove and Clear all (stored on this computer); Library grouped
   into Movies, Series and other types; player keys also work while the main window has focus
   and ignore Caps Lock/Shift.
+- 2026-10-21: Library groups became tabs (Watching, Movies, Series, other types; last tab
+  remembered), and titles can be marked "Watching" on their page (owner's request). Marks are
+  kept on this computer only: Stremio's library has no such field.

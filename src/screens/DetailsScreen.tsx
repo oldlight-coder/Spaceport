@@ -14,6 +14,7 @@ import { titleProgress, VideoProgress, watchedShare } from "../api/progress";
 import { getWatched, setWatched, WatchedMarks } from "../api/watched";
 import { TitleInfo } from "../api/player";
 import { formatTime } from "../format";
+import { setWatching, useWatching } from "../watching";
 import { fetchStreams, noStreamsReason, RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
@@ -114,6 +115,7 @@ function Details({ meta }: { meta: MetaDetails }) {
     genres: meta.genres,
   };
   const watched = useWatched(item);
+  const watchingList = useWatching();
   const watchedSet = new Set(watched.marks.videos);
   const allWatched =
     watched.marks.title ||
@@ -223,6 +225,7 @@ function Details({ meta }: { meta: MetaDetails }) {
     setWatched: (ids, value) => markWatched(ids, value),
     busy: watched.busy,
   };
+  const isWatching = watchingList.some((i) => i.id === meta.id);
   const movieTarget = { videoId: meta.id, heading: meta.name };
   const facts = [meta.releaseInfo, meta.runtime, meta.imdbRating && `IMDb ${meta.imdbRating}`].filter(
     Boolean,
@@ -253,6 +256,18 @@ function Details({ meta }: { meta: MetaDetails }) {
             )}
             {meta.description && <p className="description">{meta.description}</p>}
             <div className="row-actions">
+              <button
+                className={isWatching ? "secondary watched-toggle on" : "secondary watched-toggle"}
+                onClick={() =>
+                  setWatching(
+                    { id: meta.id, type: meta.type, name: meta.name, poster: meta.poster },
+                    !isWatching,
+                  )
+                }
+                title="Keeps this title under Library > Watching"
+              >
+                {isWatching ? "★ Watching" : "☆ Mark as watching"}
+              </button>
               <button
                 className={allWatched ? "secondary watched-toggle on" : "secondary watched-toggle"}
                 onClick={() => markWatched([], !allWatched)}
