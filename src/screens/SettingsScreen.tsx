@@ -204,6 +204,23 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
             </span>
           </span>
         </label>
+        <label className="setting cache-setting">
+          <span className="setting-label">Torrent cache size (GB)</span>
+          <input
+            type="number"
+            min={1}
+            max={2000}
+            value={settings.torrentCacheGb}
+            onChange={(e) => {
+              const gb = Math.round(Number(e.target.value));
+              if (gb >= 1 && gb <= 2000) update({ torrentCacheGb: gb });
+            }}
+          />
+          <span className="muted small">
+            When downloads pass this size, torrents you are not watching are deleted, least
+            recently watched first. Everything is deleted when Spaceport closes.
+          </span>
+        </label>
       </section>
 
       <section className="settings-section">

@@ -422,6 +422,7 @@ fn settings_set(state: tauri::State<'_, AppState>, settings: Settings) -> Result
         .save(&settings)
         .map_err(|e| e.to_string())?;
     state.torrents.set_dht(settings.torrent_dht);
+    state.torrents.set_cache_limit(settings.torrent_cache_gb);
     *state.settings.lock().unwrap() = settings.clone();
     Ok(settings)
 }
@@ -450,7 +451,11 @@ pub fn run() {
             let settings_store = SettingsStore::new(&config_dir);
             let settings = settings_store.load();
             let torrent_cache = app.path().app_cache_dir()?.join("torrents");
-            let torrents = torrent::TorrentEngine::new(torrent_cache, settings.torrent_dht);
+            let torrents = torrent::TorrentEngine::new(
+                torrent_cache,
+                settings.torrent_dht,
+                settings.torrent_cache_gb,
+            );
             app.manage(AppState {
                 api: StremioApi::new(DEFAULT_BASE_URL),
                 secrets: Box::new(KeyringStore),
@@ -501,6 +506,15 @@ pub fn run() {
             player_control,
             player_state
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Spaceport");
+        .build(tauri::generate_context!())
+        .expect("error while building Spaceport")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Stop the torrent engine and delete everything it downloaded.
+                if let Some(state) = app.try_state::<AppState>() {
+                    let engine = state.torrents.clone();
+                    tauri::async_runtime::block_on(engine.shutdown());
+                }
+            }
+        });
 }

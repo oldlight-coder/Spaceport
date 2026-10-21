@@ -30,6 +30,9 @@ pub struct Settings {
     /// Let the torrent engine use DHT to find peers. Its UDP socket is the only thing in
     /// Spaceport that listens on the network; off means trackers only.
     pub torrent_dht: bool,
+    /// Most gigabytes downloaded torrents may use; torrents not being watched are deleted,
+    /// least recently watched first, beyond it. Everything is deleted when Spaceport exits.
+    pub torrent_cache_gb: u32,
 }
 
 impl Default for Settings {
@@ -41,6 +44,7 @@ impl Default for Settings {
             filters: StreamFilters::default(),
             avatar: None,
             torrent_dht: true,
+            torrent_cache_gb: 10,
         }
     }
 }
@@ -73,6 +77,11 @@ impl Settings {
         {
             return Err(SettingsError::Invalid(
                 "languages must be two-letter codes".into(),
+            ));
+        }
+        if !(1..=2000).contains(&self.torrent_cache_gb) {
+            return Err(SettingsError::Invalid(
+                "the torrent cache must be between 1 and 2000 GB".into(),
             ));
         }
         if let Some(avatar) = &self.avatar {

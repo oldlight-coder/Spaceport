@@ -569,6 +569,9 @@ fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue, state: 
                 let _ = main.set_focus();
             }
             let _ = handle.emit("player", PlayerEvent::Closed);
+            // Torrents nobody is watching now stop downloading.
+            let engine = player.torrents.clone();
+            tauri::async_runtime::spawn(async move { engine.pause_idle().await });
         });
     });
 }

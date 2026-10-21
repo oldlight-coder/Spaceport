@@ -13,6 +13,7 @@ export interface Settings {
   filters: StreamFilters;
   avatar: string | null;
   torrentDht: boolean;
+  torrentCacheGb: number;
 }
 
 export const getSettings = () => invoke<Settings>("settings_get");

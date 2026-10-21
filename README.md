@@ -44,3 +44,8 @@ non-Windows dev builds an in-memory store is used, so sign-in does not survive a
 
 Preferences (languages, stream filters, profile picture) are saved in `settings.json` in the app
 config folder (`%APPDATA%\com.spaceport.client` on Windows). It holds no secrets.
+
+Torrents are downloaded to the app cache folder (`%LOCALAPPDATA%\com.spaceport.client\torrents` on
+Windows). Torrents you are not watching are deleted once the cache passes the size set in
+Settings (10 GB by default), and the whole folder is deleted when Spaceport closes. The player
+reads torrents through a stream server bound to 127.0.0.1 only.

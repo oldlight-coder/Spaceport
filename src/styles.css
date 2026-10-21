@@ -893,3 +893,8 @@ label.toggle > span {
   flex-direction: column;
   gap: 4px;
 }
+
+.cache-setting {
+  max-width: 420px;
+  margin-top: 20px;
+}

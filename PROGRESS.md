@@ -36,8 +36,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   player move to the next ranked stream.
 
 ## M5. Torrent streaming
-- [ ] librqbit engine; streams a magnet while downloading
-- [ ] Local stream server on 127.0.0.1 only; cleans up cache on exit or by size limit
+- [x] librqbit engine; streams a magnet while downloading
+- [x] Local stream server on 127.0.0.1 only; cleans up cache on exit or by size limit
 - **Acceptance:** a magnet from a torrent addon starts playing within about 15 seconds on a healthy
   torrent; seeking works; nothing listens on a non-loopback address.
 
@@ -156,3 +156,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   server, which adds the magnet (addon trackers included), picks the file, downloads only it
   and serves range requests. End-to-end test with a local seeder passed (IPv4-patched copy here,
   as this sandbox has no IPv6); it skips itself where IPv6 sockets are unavailable.
+- 2026-10-21: M5 torrent playback confirmed by owner on Windows (Torrentio without debrid). (3516e08)
+- 2026-10-21: M5 cache cleanup: the torrent cache is wiped on start and exit; a size limit in
+  Settings (10 GB default) deletes idle torrents least recently watched first, never the one
+  playing (open stream or used in the last 2 min); torrents nobody watches are paused when the
+  player closes and resume when reopened. Stream server stays 127.0.0.1-only. M5 code complete.

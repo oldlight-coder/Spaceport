@@ -5,24 +5,36 @@
 //! Settings (its UDP socket is the only one that listens on the network). The stream server
 //! binds to 127.0.0.1 only.
 
+mod cache;
 pub mod server;
 
 use std::collections::{HashMap, HashSet};
+use std::io::SeekFrom;
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use librqbit::{
-    AddTorrent, AddTorrentOptions, AddTorrentResponse, DhtSessionConfig, Session, SessionOptions,
+    AddTorrent, AddTorrentOptions, AddTorrentResponse, DhtSessionConfig, ManagedTorrent, Session,
+    SessionOptions,
 };
 use rand::Rng;
 use serde::Deserialize;
+use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
 use tokio::sync::OnceCell;
 
 use server::{OpenError, OpenFuture, Opened, Opener};
 
 /// How long to wait for a magnet's file list from peers before giving up.
 const METADATA_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How often the cache size is checked while the engine runs.
+const CACHE_CHECK_INTERVAL: Duration = Duration::from_secs(30);
+
+const GIB: u64 = 1024 * 1024 * 1024;
 
 const VIDEO_EXTENSIONS: &[&str] = &[
     "mkv", "mp4", "m4v", "avi", "webm", "mov", "ts", "m2ts", "wmv",
@@ -105,26 +117,84 @@ fn random_token() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// What the cache cleanup needs to know about one torrent.
+struct Usage {
+    handle: Arc<ManagedTorrent>,
+    last_used: Instant,
+    open_streams: Arc<AtomicUsize>,
+}
+
 pub struct TorrentEngine {
     cache_dir: PathBuf,
     session: OnceCell<Arc<Session>>,
     server: OnceCell<String>,
     streams: Mutex<HashMap<String, TorrentSource>>,
+    /// Torrents added this run, by info hash.
+    usage: Mutex<HashMap<String, Usage>>,
     /// Read when the session starts; changing it takes effect on the next app start.
     dht: Mutex<bool>,
+    /// Most bytes the downloaded torrents may take before idle ones are deleted.
+    cache_limit: AtomicU64,
     /// Peers to connect to directly, so tests can use a local seeder without DHT or trackers.
     #[cfg(test)]
     initial_peers: Mutex<Vec<std::net::SocketAddr>>,
 }
 
+/// A torrent file stream that counts itself as open while mpv reads from it.
+struct CountedStream<S> {
+    inner: S,
+    open_streams: Arc<AtomicUsize>,
+}
+
+impl<S> CountedStream<S> {
+    fn new(inner: S, open_streams: Arc<AtomicUsize>) -> Self {
+        open_streams.fetch_add(1, Ordering::SeqCst);
+        Self {
+            inner,
+            open_streams,
+        }
+    }
+}
+
+impl<S> Drop for CountedStream<S> {
+    fn drop(&mut self) {
+        self.open_streams.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for CountedStream<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl<S: AsyncSeek + Unpin> AsyncSeek for CountedStream<S> {
+    fn start_seek(mut self: Pin<&mut Self>, position: SeekFrom) -> std::io::Result<()> {
+        Pin::new(&mut self.inner).start_seek(position)
+    }
+
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<u64>> {
+        Pin::new(&mut self.inner).poll_complete(cx)
+    }
+}
+
 impl TorrentEngine {
-    pub fn new(cache_dir: PathBuf, dht: bool) -> Arc<Self> {
+    /// Creates the engine. Anything left in `cache_dir` from an earlier run (for example after
+    /// a crash) is deleted: nothing is resumed between runs.
+    pub fn new(cache_dir: PathBuf, dht: bool, cache_limit_gb: u32) -> Arc<Self> {
+        let _ = std::fs::remove_dir_all(&cache_dir);
         Arc::new(Self {
             cache_dir,
             session: OnceCell::new(),
             server: OnceCell::new(),
             streams: Mutex::new(HashMap::new()),
+            usage: Mutex::new(HashMap::new()),
             dht: Mutex::new(dht),
+            cache_limit: AtomicU64::new(u64::from(cache_limit_gb.max(1)) * GIB),
             #[cfg(test)]
             initial_peers: Mutex::new(Vec::new()),
         })
@@ -134,7 +204,68 @@ impl TorrentEngine {
         *self.dht.lock().unwrap() = enabled;
     }
 
-    async fn session(&self) -> Result<Arc<Session>, String> {
+    pub fn set_cache_limit(&self, gb: u32) {
+        self.cache_limit
+            .store(u64::from(gb.max(1)) * GIB, Ordering::SeqCst);
+    }
+
+    /// Deletes idle torrents, least recently watched first, while the cache is over its limit.
+    pub async fn enforce_cache_limit(&self) {
+        let Some(session) = self.session.get() else {
+            return;
+        };
+        let now = Instant::now();
+        let victims = {
+            let usage = self.usage.lock().unwrap();
+            let entries: Vec<cache::CacheEntry<String>> = usage
+                .iter()
+                .map(|(hash, u)| cache::CacheEntry {
+                    key: hash.clone(),
+                    size: u.handle.stats().progress_bytes,
+                    last_used: u.last_used,
+                    open_streams: u.open_streams.load(Ordering::SeqCst),
+                })
+                .collect();
+            cache::evictions(&entries, self.cache_limit.load(Ordering::SeqCst), now)
+        };
+        for hash in victims {
+            let removed = self.usage.lock().unwrap().remove(&hash);
+            if let Some(usage) = removed {
+                let _ = session.delete(usage.handle.id().into(), true).await;
+            }
+        }
+    }
+
+    /// The player closed: stop downloading torrents nobody is watching, then trim the cache.
+    pub async fn pause_idle(&self) {
+        let Some(session) = self.session.get() else {
+            return;
+        };
+        let idle: Vec<Arc<ManagedTorrent>> = self
+            .usage
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|u| u.open_streams.load(Ordering::SeqCst) == 0)
+            .map(|u| u.handle.clone())
+            .collect();
+        for handle in idle {
+            if !handle.is_paused() {
+                let _ = session.pause(&handle).await;
+            }
+        }
+        self.enforce_cache_limit().await;
+    }
+
+    /// Stops the engine and deletes everything it downloaded. Called when the app exits.
+    pub async fn shutdown(&self) {
+        if let Some(session) = self.session.get() {
+            session.stop().await;
+        }
+        let _ = std::fs::remove_dir_all(&self.cache_dir);
+    }
+
+    async fn session(self: &Arc<Self>) -> Result<Arc<Session>, String> {
         self.session
             .get_or_try_init(|| async {
                 let dht = *self.dht.lock().unwrap();
@@ -159,6 +290,17 @@ impl TorrentEngine {
                             .await
                             .map_err(|e| format!("could not start the torrent engine: {e}"))?,
                     };
+                // Check the cache size regularly for as long as the engine runs.
+                let weak = Arc::downgrade(self);
+                tokio::spawn(async move {
+                    loop {
+                        tokio::time::sleep(CACHE_CHECK_INTERVAL).await;
+                        let Some(engine) = weak.upgrade() else {
+                            return;
+                        };
+                        engine.enforce_cache_limit().await;
+                    }
+                });
                 Ok::<_, String>(session)
             })
             .await
@@ -194,7 +336,7 @@ impl TorrentEngine {
     }
 
     /// Adds the torrent (once), waits for its file list and opens the chosen file as a stream.
-    async fn open(&self, token: &str) -> Result<Opened, OpenError> {
+    async fn open(self: &Arc<Self>, token: &str) -> Result<Opened, OpenError> {
         let source = self
             .streams
             .lock()
@@ -249,6 +391,25 @@ impl TorrentEngine {
                 .await
                 .map_err(|e| failed(e.to_string()))?;
         }
+        // A torrent paused when the player closed resumes when it is watched again.
+        if handle.is_paused() {
+            session
+                .unpause(&handle)
+                .await
+                .map_err(|e| failed(e.to_string()))?;
+        }
+        let open_streams = {
+            let mut usage = self.usage.lock().unwrap();
+            let entry = usage
+                .entry(handle.info_hash().as_string())
+                .or_insert_with(|| Usage {
+                    handle: handle.clone(),
+                    last_used: Instant::now(),
+                    open_streams: Arc::new(AtomicUsize::new(0)),
+                });
+            entry.last_used = Instant::now();
+            entry.open_streams.clone()
+        };
         let stream = handle
             .clone()
             .stream(file)
@@ -257,7 +418,7 @@ impl TorrentEngine {
         Ok(Opened {
             len: stream.len(),
             name: files[file].0.clone(),
-            reader: Box::new(stream),
+            reader: Box::new(CountedStream::new(stream, open_streams)),
         })
     }
 }
@@ -387,7 +548,7 @@ mod tests {
         seeded.wait_until_initialized().await.unwrap();
         let seeder_addr = seeder.listen_addr().expect("seeder listens");
 
-        let engine = TorrentEngine::new(root.join("cache"), false);
+        let engine = TorrentEngine::new(root.join("cache"), false, 10);
         engine.initial_peers.lock().unwrap().push(seeder_addr);
         let url = engine
             .register(TorrentSource {
@@ -422,6 +583,11 @@ mod tests {
             "{head}"
         );
         assert_eq!(&response[split + 4..], &data[1_500_000..1_500_100]);
+
+        // Closing the app deletes everything the engine downloaded.
+        assert!(root.join("cache").exists());
+        engine.shutdown().await;
+        assert!(!root.join("cache").exists());
 
         let _ = std::fs::remove_dir_all(&root);
     }
