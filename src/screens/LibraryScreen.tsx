@@ -4,8 +4,8 @@ import { LoadableList, useLoad } from "../components/Loadable";
 import PosterCard from "../components/PosterCard";
 import { setWatching, useWatching } from "../watching";
 
-// Movies first, then series, then any other type an addon uses.
-const ORDER = ["movie", "series"];
+// Series first, then movies, then any other type an addon uses.
+const ORDER = ["series", "movie"];
 const HEADINGS: Record<string, string> = { movie: "Movies", series: "Series" };
 const WATCHING = "watching";
 const TAB_KEY = "spaceport.libraryTab";

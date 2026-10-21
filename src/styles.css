@@ -1062,3 +1062,30 @@ button.text-button {
 .library-tabs {
   margin-bottom: 20px;
 }
+
+.poster-button {
+  position: relative;
+}
+
+.poster-bookmark {
+  position: absolute;
+  top: 0;
+  left: 10px;
+  display: flex;
+  padding: 6px 3px 8px;
+  border-radius: 0 0 4px 4px;
+  background: var(--accent);
+  color: #0f1115;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.watching-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.watching-toggle.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}

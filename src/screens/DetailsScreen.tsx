@@ -15,6 +15,7 @@ import { getWatched, setWatched, WatchedMarks } from "../api/watched";
 import { TitleInfo } from "../api/player";
 import { formatTime } from "../format";
 import { setWatching, useWatching } from "../watching";
+import BookmarkIcon from "../components/BookmarkIcon";
 import { fetchStreams, noStreamsReason, RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
@@ -257,7 +258,7 @@ function Details({ meta }: { meta: MetaDetails }) {
             {meta.description && <p className="description">{meta.description}</p>}
             <div className="row-actions">
               <button
-                className={isWatching ? "secondary watched-toggle on" : "secondary watched-toggle"}
+                className={isWatching ? "secondary watching-toggle on" : "secondary watching-toggle"}
                 onClick={() =>
                   setWatching(
                     { id: meta.id, type: meta.type, name: meta.name, poster: meta.poster },
@@ -266,7 +267,8 @@ function Details({ meta }: { meta: MetaDetails }) {
                 }
                 title="Keeps this title under Library > Watching"
               >
-                {isWatching ? "★ Watching" : "☆ Mark as watching"}
+                <BookmarkIcon filled={isWatching} />
+                {isWatching ? "Watching" : "Mark as watching"}
               </button>
               <button
                 className={allWatched ? "secondary watched-toggle on" : "secondary watched-toggle"}

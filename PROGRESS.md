@@ -249,3 +249,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-21: Library groups became tabs (Watching, Movies, Series, other types; last tab
   remembered), and titles can be marked "Watching" on their page (owner's request). Marks are
   kept on this computer only: Stremio's library has no such field.
+- 2026-10-21: Watching mark is a bookmark (button and a ribbon on every poster of a marked title, in all rows and the Library); Library tabs put Series before Movies.

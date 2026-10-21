@@ -1,4 +1,6 @@
 import { TitleRef, useOpenTitle } from "../navigation";
+import { useWatching } from "../watching";
+import BookmarkIcon from "./BookmarkIcon";
 
 interface Props {
   name: string;
@@ -25,6 +27,7 @@ export default function PosterCard({
   removeLabel = "Remove",
 }: Props) {
   const openTitle = useOpenTitle();
+  const watching = useWatching().some((i) => i.id === title.id);
   const className = shape === "landscape" ? "poster-card landscape" : "poster-card";
   return (
     <li className={className}>
@@ -33,6 +36,11 @@ export default function PosterCard({
           <img src={poster} alt="" loading="lazy" referrerPolicy="no-referrer" />
         ) : (
           <div className="poster-placeholder">{name.slice(0, 1)}</div>
+        )}
+        {watching && (
+          <span className="poster-bookmark" title="Watching">
+            <BookmarkIcon filled size={18} />
+          </span>
         )}
         {progress != null && (
           <span className="progress-bar" aria-label={`${Math.round(progress * 100)}% watched`}>
