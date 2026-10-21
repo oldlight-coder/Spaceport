@@ -1,5 +1,6 @@
 import { TitleRef, useOpenTitle } from "../navigation";
 import { useWatching } from "../watching";
+import { useNewEpisodes } from "../newEpisodes";
 import BookmarkIcon from "./BookmarkIcon";
 
 interface Props {
@@ -28,6 +29,7 @@ export default function PosterCard({
 }: Props) {
   const openTitle = useOpenTitle();
   const watching = useWatching().some((i) => i.id === title.id);
+  const fresh = useNewEpisodes()[title.id]?.length ?? 0;
   const className = shape === "landscape" ? "poster-card landscape" : "poster-card";
   return (
     <li className={className}>
@@ -37,9 +39,18 @@ export default function PosterCard({
         ) : (
           <div className="poster-placeholder">{name.slice(0, 1)}</div>
         )}
-        {watching && (
-          <span className="poster-bookmark" title="Watching">
-            <BookmarkIcon filled size={18} />
+        {(watching || fresh > 0) && (
+          <span className="poster-badges">
+            {watching && (
+              <span className="poster-bookmark" title="Watching">
+                <BookmarkIcon filled size={18} />
+              </span>
+            )}
+            {fresh > 0 && (
+              <span className="poster-new" title={`${fresh} new episode${fresh === 1 ? "" : "s"}`}>
+                {fresh === 1 ? "New episode" : `${fresh} new episodes`}
+              </span>
+            )}
           </span>
         )}
         {progress != null && (

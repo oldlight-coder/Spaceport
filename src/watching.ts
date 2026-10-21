@@ -10,6 +10,8 @@ export interface WatchingItem {
   type: string;
   name: string;
   poster: string | null;
+  /** When it was marked, in milliseconds since 1970; episodes released later count as new. */
+  since?: number;
 }
 
 export function readWatching(): WatchingItem[] {
@@ -32,7 +34,7 @@ function write(list: WatchingItem[]) {
 
 export function setWatching(item: WatchingItem, on: boolean) {
   const rest = readWatching().filter((i) => i.id !== item.id);
-  write(on ? [item, ...rest] : rest);
+  write(on ? [{ ...item, since: item.since ?? Date.now() }, ...rest] : rest);
 }
 
 /** The marked titles, updated whenever a mark changes anywhere in the window. */

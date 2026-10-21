@@ -16,6 +16,7 @@ import { TitleInfo } from "../api/player";
 import { formatTime } from "../format";
 import { setWatching, useWatching } from "../watching";
 import BookmarkIcon from "../components/BookmarkIcon";
+import { refreshNewEpisodes, useNewEpisodes } from "../newEpisodes";
 import { fetchStreams, noStreamsReason, RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
@@ -117,6 +118,7 @@ function Details({ meta }: { meta: MetaDetails }) {
   };
   const watched = useWatched(item);
   const watchingList = useWatching();
+  const newHere = useNewEpisodes()[meta.id] ?? [];
   const watchedSet = new Set(watched.marks.videos);
   const allWatched =
     watched.marks.title ||
@@ -125,7 +127,10 @@ function Details({ meta }: { meta: MetaDetails }) {
   const markWatched = (videos: string[], value: boolean) =>
     watched
       .mark(videos, value)
-      .then(reloadProgress)
+      .then(() => {
+        reloadProgress();
+        refreshNewEpisodes();
+      })
       .catch((e) => setNotice({ text: String(e), error: true }));
 
   useEffect(() => {
@@ -223,6 +228,7 @@ function Details({ meta }: { meta: MetaDetails }) {
     play: (ep) => autoPlay(episodeTarget(ep)),
     choose: (ep) => setTarget(episodeTarget(ep)),
     isWatched: (ep) => watchedSet.has(ep.id),
+    isNew: (ep) => newHere.includes(ep.id),
     setWatched: (ids, value) => markWatched(ids, value),
     busy: watched.busy,
   };
@@ -364,6 +370,7 @@ interface EpisodeActions {
   play: (ep: Episode) => void;
   choose: (ep: Episode) => void;
   isWatched: (ep: Episode) => boolean;
+  isNew: (ep: Episode) => boolean;
   setWatched: (ids: string[], watched: boolean) => void;
   busy: boolean;
 }
@@ -433,6 +440,7 @@ function EpisodeList({ episodes, actions, progress }: EpisodeListProps) {
                 {ep.title}
               </strong>
               {ep.released && <span className="muted"> · {formatDate(ep.released)}</span>}
+              {actions.isNew(ep) && <span className="new-tag">New</span>}
               {ep.overview && <p className="muted">{ep.overview}</p>}
               <EpisodeProgress progress={progress[ep.id]} />
             </div>

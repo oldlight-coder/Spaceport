@@ -64,12 +64,13 @@ pass on Windows. The owner tests each milestone before the next one starts.
   pick, play, resume, skip intro.
 
 ## M9. Conveniences
-- [ ] Remove "The picture stays on this computer" from Settings
-- [ ] Continue Watching: remove one title, clear all
-- [ ] Search history with single remove and Clear all
-- [ ] Library tabs: Watching, Movies, Series (and other types)
-- [ ] Mark titles as "Watching" from their page
-- [ ] Player keys work from any Spaceport window (J/K/L, arrows, volume)
+- [x] Remove "The picture stays on this computer" from Settings
+- [x] Continue Watching: remove one title, clear all
+- [x] Search history with single remove and Clear all
+- [x] Library tabs: Watching, Movies, Series (and other types)
+- [x] Mark titles as "Watching" from their page
+- [x] Player keys work from any Spaceport window (J/K/L, arrows, volume)
+- [ ] New-episode badges on series posters and "New" tags on episodes
 - **Acceptance:** each item works in the installed app.
 
 ## M10. Look and feel
@@ -250,3 +251,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   remembered), and titles can be marked "Watching" on their page (owner's request). Marks are
   kept on this computer only: Stremio's library has no such field.
 - 2026-10-21: Watching mark is a bookmark (button and a ribbon on every poster of a marked title, in all rows and the Library); Library tabs put Series before Movies.
+- 2026-10-21: M9 items accepted by the owner on Windows and ticked.
+- 2026-10-21: New episodes (owner's request, added to M9; not yet ticked): an episode is new when
+  it came out after the series was last watched (Stremio's lastWatched, or the Watching mark's
+  time) and is not marked watched. Checked for library, Continue Watching and Watching series;
+  details cached 3 h. Posters show "New episode"/"N new episodes", episode lists a "New" tag.

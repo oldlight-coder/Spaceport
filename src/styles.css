@@ -1067,10 +1067,41 @@ button.text-button {
   position: relative;
 }
 
-.poster-bookmark {
+.poster-badges {
   position: absolute;
   top: 0;
   left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.poster-new {
+  margin-top: 8px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #e8a33d;
+  color: #0f1115;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.new-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #e8a33d;
+  color: #0f1115;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+
+.poster-bookmark {
   display: flex;
   padding: 6px 3px 8px;
   border-radius: 0 0 4px 4px;

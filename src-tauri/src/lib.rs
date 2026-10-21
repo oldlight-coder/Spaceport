@@ -1,6 +1,7 @@
 mod aniskip;
 mod auth;
 mod language;
+mod new_episodes;
 mod player;
 mod progress;
 mod ranking;
@@ -39,6 +40,8 @@ pub(crate) struct AppState {
     /// Positions of every video watched, kept on this computer.
     resume: progress::ResumeStore,
     aniskip: aniskip::AniSkip,
+    /// Series details fetched for the new-episode check, with when they were fetched.
+    metas: Mutex<std::collections::HashMap<String, (std::time::Instant, MetaDetails)>>,
     /// One progress save at a time, so two saves of the same title never race.
     progress_lock: tokio::sync::Mutex<()>,
 }
@@ -259,11 +262,106 @@ async fn meta_details(
     id: String,
     preferred: Option<String>,
 ) -> Result<MetaDetails, String> {
+    fetch_meta(&state, &kind, &id, preferred.as_deref()).await
+}
+
+/// A series checked for new episodes that only this computer knows about: marked as watching
+/// at `since` (milliseconds since 1970), maybe without a Stremio library item.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrackedTitle {
+    id: String,
+    #[serde(rename = "type")]
+    kind: String,
+    since: Option<i64>,
+}
+
+/// How long fetched series details are reused by the new-episode check.
+const META_CACHE: std::time::Duration = std::time::Duration::from_secs(3 * 60 * 60);
+
+/// New episodes of the series in the library, in Continue Watching and marked as watching, by
+/// title id. Titles without new episodes are left out, as are ones whose details failed.
+#[tauri::command]
+async fn new_episodes(
+    state: tauri::State<'_, AppState>,
+    tracked: Vec<TrackedTitle>,
+) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    let key = state.auth_key()?;
+    let items = state
+        .api
+        .library_items(&key)
+        .await
+        .map_err(|e| e.to_string())?;
+    let text = |item: &Value, k: &str| item.get(k).and_then(Value::as_str).map(str::to_string);
+    let flag = |item: &Value, k: &str| item.get(k).and_then(Value::as_bool).unwrap_or(false);
+    // (id, type, library item, mark time)
+    let mut titles: Vec<(String, String, Option<Value>, Option<i64>)> = items
+        .iter()
+        .filter(|i| !flag(i, "removed") || flag(i, "temp"))
+        .filter_map(|i| Some((text(i, "_id")?, text(i, "type")?, Some(i.clone()), None)))
+        .filter(|(_, kind, _, _)| kind != "movie" && kind != "other")
+        .collect();
+    for t in tracked {
+        match titles.iter_mut().find(|(id, ..)| *id == t.id) {
+            Some(entry) => entry.3 = t.since,
+            None => {
+                let item = items
+                    .iter()
+                    .find(|i| text(i, "_id").as_deref() == Some(&t.id))
+                    .cloned();
+                titles.push((t.id, t.kind, item, t.since));
+            }
+        }
+    }
+    let now = progress::now_millis();
+    let mut found = Vec::new();
+    // A few at a time, so a big library does not flood the metadata addons.
+    for batch in titles.chunks(6) {
+        let checks = batch.iter().map(|(id, kind, item, since)| {
+            let state = &*state;
+            async move {
+                let cached = state
+                    .metas
+                    .lock()
+                    .unwrap()
+                    .get(id)
+                    .filter(|(at, _)| at.elapsed() < META_CACHE)
+                    .map(|(_, meta)| meta.clone());
+                let meta = match cached {
+                    Some(meta) => meta,
+                    None => {
+                        let meta = fetch_meta(state, kind, id, None).await.ok()?;
+                        let entry = (std::time::Instant::now(), meta.clone());
+                        state.metas.lock().unwrap().insert(id.clone(), entry);
+                        meta
+                    }
+                };
+                let new = new_episodes::new_episodes(&meta, item.as_ref(), *since, now);
+                (!new.is_empty()).then(|| (id.clone(), new))
+            }
+        });
+        found.extend(
+            futures_util::future::join_all(checks)
+                .await
+                .into_iter()
+                .flatten(),
+        );
+    }
+    Ok(found.into_iter().collect())
+}
+
+/// A title's details from the first addon that has them; `preferred` is tried first.
+async fn fetch_meta(
+    state: &AppState,
+    kind: &str,
+    id: &str,
+    preferred: Option<&str>,
+) -> Result<MetaDetails, String> {
     let sources = state.sources().await?;
-    let urls = addons::resource_sources(&sources, "meta", &kind, &id, preferred.as_deref());
+    let urls = addons::resource_sources(&sources, "meta", kind, id, preferred);
     let mut last_error = "none of your addons has details for this title".to_string();
     for transport_url in urls {
-        let url = catalog::resource_url(&transport_url, "meta", &kind, &id, &[])
+        let url = catalog::resource_url(&transport_url, "meta", kind, id, &[])
             .map_err(|e| e.to_string())?;
         match state.api.addon_json(&url, ADDON_TIMEOUT).await {
             Ok(body) => {
@@ -793,6 +891,7 @@ pub fn run() {
                 torrents,
                 resume: progress::ResumeStore::new(&config_dir),
                 aniskip: aniskip::AniSkip::default(),
+                metas: Mutex::default(),
                 progress_lock: tokio::sync::Mutex::new(()),
             });
             let handle = app.handle().clone();
@@ -845,6 +944,7 @@ pub fn run() {
             player_load_subtitle,
             continue_watching,
             continue_dismiss,
+            new_episodes,
             title_progress,
             watched_get,
             watched_set
