@@ -75,11 +75,16 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - **Acceptance:** each item works in the installed app.
 
 ## M10. Look and feel
-- [ ] Material You theme from an accent color, with custom colors in Settings
-- [ ] Light, dark and follow-system modes
-- [ ] Styled scrollbars and smooth scrolling
-- [ ] Skeleton loading placeholders
+- [x] Material You theme from an accent color, with custom colors in Settings
+- [x] Light, dark and follow-system modes
+- [x] Styled scrollbars and smooth scrolling
+- [x] Skeleton loading placeholders
 - **Acceptance:** every screen reads well in light and dark mode with a few accent colors.
+
+## M11. Search assistant
+- [ ] Autocomplete: title suggestions under the search field while typing, arrow keys and Enter
+- [ ] Forgiving search: typos and partial words still find titles ("Best matches" row)
+- **Acceptance:** misspelled titles such as "breakng bad" or "the mandolorian" are found.
 
 ## Deferred (owner's choice, 2026-10-21)
 - Ratings beyond IMDb (Rotten Tomatoes via MDBList or OMDb)
@@ -269,3 +274,10 @@ pass on Windows. The owner tests each milestone before the next one starts.
   scrollbars, smooth scrolling (off with reduced motion), shimmer skeletons on every loading
   screen and a spinner at start-up.
 - 2026-10-21: Catalogs that answer with a single "Error…" placeholder title (TMDB addon on failure) are treated as empty, so their rows no longer show an X card.
+- 2026-10-21: M10 accepted by the owner on Windows; ticked.
+- 2026-10-21: M11 search assistant (owner's request; not yet ticked): fuzzy.rs scores titles
+  against the query (accents, punctuation, typos with swaps, unfinished last word) and makes
+  looser forms of the query (words cut to four letters, longest word alone) for addons' exact
+  search; search.rs merges and ranks. search_assist asks every search catalog (looser forms
+  always for the search page, for autocomplete only when the query finds under 3), caching
+  answers for 10 minutes. Suggestions under the search field, "Best matches" row on the page.

@@ -60,6 +60,8 @@ or hosted services of its own.
   page; the mark is kept on this computer. Sorted by recently watched, recently added or name.
 - New episodes: series in the library, Continue Watching or marked Watching show a badge when
   an episode came out since they were last watched; the episode list tags the new ones.
+- Search assistant: title suggestions while typing, and search that forgives typos and partial
+  words, using only the installed addons' search.
 - Player keys: J/Left back 10 s, K/Space pause, L/Right forward 10 s, Up/Down volume; they work
   whichever Spaceport window has focus.
 - Look: Material You (Material 3) styling with a chosen accent color, light, dark or follow the

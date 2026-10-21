@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
-import { CatalogRef, searchCatalogs } from "../api/catalog";
+import { CatalogRef, searchAssist, searchCatalogs } from "../api/catalog";
+import PosterCard from "../components/PosterCard";
 import CatalogRow from "../components/CatalogRow";
 import { LoadableList, useLoad } from "../components/Loadable";
 import NeedAddons from "../components/NeedAddons";
-import { RowsSkeleton } from "../components/Skeleton";
+import { PosterRowSkeleton, RowsSkeleton } from "../components/Skeleton";
 
 const rowKey = (c: CatalogRef) => `${c.transportUrl} ${c.type} ${c.id}`;
 
@@ -19,8 +20,46 @@ export default function SearchScreen({ query }: { query: string }) {
         empty={<NeedAddons text="None of your addons supports search." />}
         skeleton={<RowsSkeleton />}
       >
-        {(list) => <SearchRows key={query} catalogs={list} query={query} />}
+        {(list) => (
+          <div className="rows">
+            <BestMatches key={`best ${query}`} query={query} />
+            <SearchRows key={query} catalogs={list} query={query} />
+          </div>
+        )}
       </LoadableList>
+    </section>
+  );
+}
+
+/** Titles closest to the query from every addon, typos forgiven, above the per-addon rows. */
+function BestMatches({ query }: { query: string }) {
+  const load = useCallback(() => searchAssist(query, false, 20), [query]);
+  const [hits] = useLoad(load);
+  if (hits.status === "loading") {
+    return (
+      <section className="row">
+        <h2>Best matches</h2>
+        <PosterRowSkeleton heading={false} />
+      </section>
+    );
+  }
+  if (hits.status !== "ready" || hits.data.length === 0) return null;
+  return (
+    <section className="row">
+      <h2>
+        Best matches <span className="muted row-meta">from all addons</span>
+      </h2>
+      <ul className="poster-row">
+        {hits.data.map((hit) => (
+          <PosterCard
+            key={`${hit.type} ${hit.id}`}
+            name={hit.name}
+            poster={hit.poster}
+            title={{ type: hit.type, id: hit.id, source: hit.transportUrl }}
+            caption={hit.releaseInfo}
+          />
+        ))}
+      </ul>
     </section>
   );
 }
@@ -37,12 +76,12 @@ function SearchRows({ catalogs, query }: { catalogs: CatalogRef[]; query: string
   );
 
   return (
-    <div className="rows">
+    <>
       {catalogs.map((catalog) => (
         <SearchRow key={rowKey(catalog)} catalog={catalog} extra={extra} onLoaded={onLoaded} />
       ))}
-      {finished && total === 0 && <p className="muted">No results.</p>}
-    </div>
+      {finished && total === 0 && <p className="muted">No exact results in your addons.</p>}
+    </>
   );
 }
 

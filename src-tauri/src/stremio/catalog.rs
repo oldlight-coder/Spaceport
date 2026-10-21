@@ -41,6 +41,8 @@ pub struct MetaPreview {
     pub name: String,
     pub poster: Option<String>,
     pub poster_shape: Option<String>,
+    /// Year or year range, such as "2008–2013", when the addon gives one.
+    pub release_info: Option<String>,
 }
 
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -271,6 +273,11 @@ pub fn parse_metas(body: &Value) -> Vec<MetaPreview> {
                 name: text("name").unwrap_or_else(|| id.clone()),
                 poster: text("poster"),
                 poster_shape: text("posterShape"),
+                release_info: text("releaseInfo").or_else(|| {
+                    m.get("year")
+                        .and_then(|y| y.as_u64().map(|n| n.to_string()))
+                        .or_else(|| text("year"))
+                }),
                 id,
             })
         })

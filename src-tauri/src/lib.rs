@@ -1,10 +1,12 @@
 mod aniskip;
 mod auth;
+mod fuzzy;
 mod language;
 mod new_episodes;
 mod player;
 mod progress;
 mod ranking;
+mod search;
 mod secrets;
 mod settings;
 mod stremio;
@@ -40,6 +42,8 @@ pub(crate) struct AppState {
     /// Positions of every video watched, kept on this computer.
     resume: progress::ResumeStore,
     aniskip: aniskip::AniSkip,
+    /// Search catalog answers by URL, with when they came, so typing does not ask twice.
+    search_cache: Mutex<std::collections::HashMap<String, (std::time::Instant, Vec<MetaPreview>)>>,
     /// Series details fetched for the new-episode check, with when they were fetched.
     metas: Mutex<std::collections::HashMap<String, (std::time::Instant, MetaDetails)>>,
     /// One progress save at a time, so two saves of the same title never race.
@@ -220,6 +224,11 @@ async fn catalogs_list(state: tauri::State<'_, AppState>) -> Result<Vec<CatalogR
 /// Catalogs that accept a search term, from the installed addons or Cinemeta.
 #[tauri::command]
 async fn search_catalogs(state: tauri::State<'_, AppState>) -> Result<Vec<CatalogRef>, String> {
+    search_catalog_refs(&state).await
+}
+
+/// Every catalog that supports search, with Cinemeta's when no installed addon has one.
+async fn search_catalog_refs(state: &AppState) -> Result<Vec<CatalogRef>, String> {
     let key = state.auth_key()?;
     let mut sources = state.addon_collection(&key).await?;
     if catalog::search_catalogs(&sources).is_empty() {
@@ -231,6 +240,104 @@ async fn search_catalogs(state: tauri::State<'_, AppState>) -> Result<Vec<Catalo
         sources.insert(0, addons::builtin_descriptor(CINEMETA_URL, manifest));
     }
     Ok(catalog::search_catalogs(&sources))
+}
+
+/// How long search answers are reused, and how many are kept.
+const SEARCH_CACHE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+const SEARCH_CACHE_SIZE: usize = 300;
+
+/// One search catalog's titles for one query, from the cache when fresh. Failures count as no
+/// titles: one addon being down must not spoil the others' results.
+async fn search_page(
+    state: &AppState,
+    catalog: &CatalogRef,
+    query: &str,
+    timeout: std::time::Duration,
+) -> Vec<MetaPreview> {
+    let extra = [("search".to_string(), query.to_string())];
+    let Ok(url) = catalog::resource_url(
+        &catalog.transport_url,
+        "catalog",
+        &catalog.kind,
+        &catalog.id,
+        &extra,
+    ) else {
+        return Vec::new();
+    };
+    let cached = state
+        .search_cache
+        .lock()
+        .unwrap()
+        .get(&url)
+        .filter(|(at, _)| at.elapsed() < SEARCH_CACHE)
+        .map(|(_, metas)| metas.clone());
+    if let Some(metas) = cached {
+        return metas;
+    }
+    let Ok(body) = state.api.addon_json(&url, timeout).await else {
+        return Vec::new();
+    };
+    let metas = catalog::parse_metas(&body);
+    let mut cache = state.search_cache.lock().unwrap();
+    if cache.len() >= SEARCH_CACHE_SIZE {
+        cache.clear();
+    }
+    cache.insert(url, (std::time::Instant::now(), metas.clone()));
+    metas
+}
+
+/// The search assistant: titles close to `query` from every search catalog, best first. The
+/// query's looser forms (see `fuzzy::variants`) are asked too: always for a full search, and
+/// for autocomplete (`quick`) only when the query as typed finds too little.
+#[tauri::command]
+async fn search_assist(
+    state: tauri::State<'_, AppState>,
+    query: String,
+    quick: bool,
+    limit: usize,
+) -> Result<Vec<search::SearchHit>, String> {
+    let variants = fuzzy::variants(&query);
+    if variants[0].is_empty() {
+        return Ok(Vec::new());
+    }
+    let catalogs = search_catalog_refs(&state).await?;
+    let timeout = if quick {
+        std::time::Duration::from_secs(5)
+    } else {
+        ADDON_TIMEOUT
+    };
+    let state = &*state;
+    let ask = |chosen: Vec<usize>| {
+        let requests = chosen.into_iter().flat_map(|v| {
+            catalogs
+                .iter()
+                .enumerate()
+                .map(move |(c, catalog)| (v, c, catalog))
+        });
+        futures_util::future::join_all(requests.map(|(v, c, catalog)| {
+            let query = &variants[v];
+            async move { (v, c, search_page(state, catalog, query, timeout).await) }
+        }))
+    };
+    let mut found = if quick {
+        ask(vec![0]).await
+    } else {
+        ask((0..variants.len()).collect()).await
+    };
+    let answers = |found: &[(usize, usize, Vec<MetaPreview>)]| {
+        found
+            .iter()
+            .map(|(v, c, metas)| search::Answer {
+                catalog: &catalogs[*c],
+                variant: *v,
+                metas: metas.clone(),
+            })
+            .collect::<Vec<_>>()
+    };
+    if quick && search::rank(&query, &answers(&found), limit).len() < 3 && variants.len() > 1 {
+        found.extend(ask((1..variants.len()).collect()).await);
+    }
+    Ok(search::rank(&query, &answers(&found), limit))
 }
 
 /// Fetches one page of a catalog from an installed addon.
@@ -892,6 +999,7 @@ pub fn run() {
                 resume: progress::ResumeStore::new(&config_dir),
                 aniskip: aniskip::AniSkip::default(),
                 metas: Mutex::default(),
+                search_cache: Mutex::default(),
                 progress_lock: tokio::sync::Mutex::new(()),
             });
             let handle = app.handle().clone();
@@ -945,6 +1053,7 @@ pub fn run() {
             continue_watching,
             continue_dismiss,
             new_episodes,
+            search_assist,
             title_progress,
             watched_get,
             watched_set

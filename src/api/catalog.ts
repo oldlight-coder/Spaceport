@@ -17,7 +17,24 @@ export interface MetaPreview {
   name: string;
   poster: string | null;
   posterShape: string | null;
+  /** Year or year range, when the addon gives one. */
+  releaseInfo?: string | null;
 }
+
+/** A title the search assistant found, with the addon it came from. */
+export interface SearchHit extends MetaPreview {
+  transportUrl: string;
+  addonName: string;
+  /** How close the title is to the query, 0 to 1. */
+  score: number;
+}
+
+/**
+ * Titles close to `query` from every search catalog, best first, typos forgiven. `quick` is
+ * for autocomplete: looser forms of the query are only tried when the query finds too little.
+ */
+export const searchAssist = (query: string, quick: boolean, limit: number) =>
+  invoke<SearchHit[]>("search_assist", { query, quick, limit });
 
 export const listCatalogs = () => invoke<CatalogRef[]>("catalogs_list");
 
