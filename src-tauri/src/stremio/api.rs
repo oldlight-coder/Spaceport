@@ -199,15 +199,17 @@ impl StremioApi {
 
     /// GETs JSON from one of the other allowed services (Kitsu, AniList, AniSkip). A 404 is
     /// returned as `Ok(None)`: these services answer that way when they know nothing.
+    /// `accept` is the media type to ask for; Kitsu answers 406 unless it is JSON:API's.
     pub async fn service_get(
         &self,
         url: &str,
+        accept: &str,
         timeout: Duration,
     ) -> Result<Option<Value>, ApiError> {
         let response = self
             .http
             .get(url)
-            .header("Accept", "application/json")
+            .header("Accept", accept)
             .timeout(timeout)
             .send()
             .await

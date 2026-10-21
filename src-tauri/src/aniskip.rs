@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 use crate::stremio::api::StremioApi;
 
 const KITSU_API: &str = "https://kitsu.app/api/edge";
+/// Kitsu speaks JSON:API and refuses requests that ask for plain JSON.
+const KITSU_ACCEPT: &str = "application/vnd.api+json";
 const ANILIST_API: &str = "https://graphql.anilist.co";
 const ANISKIP_API: &str = "https://api.aniskip.com/v2/skip-times";
 const TIMEOUT: Duration = Duration::from_secs(8);
@@ -245,7 +247,7 @@ impl AniSkip {
             AnimeRef::Kitsu { id, .. } => {
                 let url = format!("{KITSU_API}/anime/{id}/mappings");
                 let body = api
-                    .service_get(&url, TIMEOUT)
+                    .service_get(&url, KITSU_ACCEPT, TIMEOUT)
                     .await
                     .map_err(|e| unreachable("Kitsu", e))?;
                 body.as_ref()
@@ -302,7 +304,7 @@ impl AniSkip {
             episode_length.max(0.0).round() as u64
         );
         let body = api
-            .service_get(&url, TIMEOUT)
+            .service_get(&url, "application/json", TIMEOUT)
             .await
             .map_err(|e| unreachable("AniSkip", e))?;
         let segments = body.as_ref().map(parse_skip_times).unwrap_or_default();

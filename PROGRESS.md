@@ -194,3 +194,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-21: AniSkip fix after "no button for Frieren": requests now send a User-Agent, AniList
   is also searched with the name before ":", and when no skip times load the player top bar says
   where the lookup stopped ("AniSkip: ..."). Tests for both cases.
+- 2026-10-21: Kitsu answered 406 to the MyAnimeList lookup; it now gets JSON:API's Accept header.
