@@ -51,6 +51,7 @@ pub const END_EOF: c_int = 0;
 pub const END_ERROR: c_int = 4;
 
 // Property formats.
+pub const FORMAT_STRING: c_int = 1;
 pub const FORMAT_FLAG: c_int = 3;
 pub const FORMAT_DOUBLE: c_int = 5;
 
@@ -255,13 +256,13 @@ impl Mpv {
         self.check(unsafe { (self.lib.set_property_string)(self.handle, n.as_ptr(), v.as_ptr()) })
     }
 
-    /// Asks for `Event::Property` whenever `name` changes, delivered as a double.
-    pub fn observe_double(&self, id: u64, name: &str) -> Result<(), String> {
+    /// Asks for `Event::Property` whenever `name` changes, delivered in `format`
+    /// (`FORMAT_STRING`, `FORMAT_FLAG` or `FORMAT_DOUBLE`). Node properties such as
+    /// `track-list` arrive as JSON text in `FORMAT_STRING`.
+    pub fn observe(&self, id: u64, name: &str, format: c_int) -> Result<(), String> {
         let n = cstring(name)?;
         // SAFETY: valid handle and string.
-        self.check(unsafe {
-            (self.lib.observe_property)(self.handle, id, n.as_ptr(), FORMAT_DOUBLE)
-        })
+        self.check(unsafe { (self.lib.observe_property)(self.handle, id, n.as_ptr(), format) })
     }
 
     /// Blocks up to `timeout` seconds (negative waits forever) for the next event.
@@ -290,6 +291,16 @@ impl Mpv {
                         match prop.format {
                             FORMAT_FLAG => PropertyValue::Flag(*(prop.data as *const c_int) != 0),
                             FORMAT_DOUBLE => PropertyValue::Double(*(prop.data as *const f64)),
+                            FORMAT_STRING => {
+                                let text = *(prop.data as *const *const c_char);
+                                if text.is_null() {
+                                    PropertyValue::None
+                                } else {
+                                    PropertyValue::Text(
+                                        CStr::from_ptr(text).to_string_lossy().into_owned(),
+                                    )
+                                }
+                            }
                             _ => PropertyValue::None,
                         }
                     };
@@ -314,6 +325,7 @@ pub enum PropertyValue {
     None,
     Flag(bool),
     Double(f64),
+    Text(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

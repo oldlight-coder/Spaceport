@@ -14,5 +14,9 @@ export default defineConfig({
   build: {
     target: "es2022",
     outDir: "dist",
+    // Two pages: the app, and the transparent window holding the player controls.
+    rollupOptions: {
+      input: { main: "index.html", player: "player.html" },
+    },
   },
 });

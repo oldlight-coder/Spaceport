@@ -30,7 +30,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 
 ## M4. Player
 - [x] libmpv embedded in the window, hardware decoding on
-- [ ] Plays direct and debrid links; auto-plays top stream, falls back to next on failure
+- [x] Plays direct and debrid links; auto-plays top stream, falls back to next on failure
 - [ ] Controls: play/pause, seek, volume, fullscreen, audio track, speed
 - **Acceptance:** a debrid or direct 4K HDR file plays smoothly; killing a stream URL makes the
   player move to the next ranked stream.
@@ -130,3 +130,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   click / Play starts the best direct or debrid stream; the player moves down the ranked list when
   a stream errors, does not start within 30 s, or ends >2 min before its duration, resuming at the
   same position. Manual picks fall back to the rest of the list. player/queue.rs, 11 tests.
+- 2026-10-21: M4 auto-play and fallback confirmed by owner on Windows (built on a second PC). (18fd4a8)
+- 2026-10-21: M4 player controls implemented (not yet ticked: needs a Windows check). A transparent
+  window owned by the main window sits over the video with title, seek bar, play/pause, ±10/30 s,
+  volume/mute, audio track, speed and fullscreen; keyboard shortcuts; auto-hide. mpv's own
+  controls and key bindings are off. player/state.rs parses mpv's track list (tests).

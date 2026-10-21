@@ -1,29 +1,34 @@
-//! Video playback with libmpv, drawn into a child window of the main window.
+//! Video playback with libmpv, drawn into a child window of the main window, with Spaceport's
+//! controls in a transparent window kept over it.
 
 mod mpv;
 mod queue;
+mod state;
 mod surface;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-use mpv::{Event, Mpv, MpvLib, PropertyValue};
+use mpv::{Event, Mpv, MpvLib, FORMAT_DOUBLE, FORMAT_FLAG, FORMAT_STRING};
 pub use queue::Candidate;
 use queue::{Action, PlayQueue};
+pub use state::PlaybackState as PlaybackStateView;
+use state::PlaybackState;
 use surface::Surface;
-
-const OBSERVE_POSITION: u64 = 1;
-const OBSERVE_DURATION: u64 = 2;
 
 /// The DLL `pnpm run setup` places in `src-tauri/lib` and the installer puts next to the app.
 const LIBRARY_FILE: &str = "libmpv-2.dll";
 
+/// Label of the transparent window holding the player controls.
+pub const CONTROLS_WINDOW: &str = "player-controls";
+
 /// Options applied before mpv starts. Everything that could load code or config from outside
-/// the app is off: no user config files, no user scripts, no youtube-dl helper.
+/// the app is off: no user config files, no user scripts, no youtube-dl helper. mpv's own
+/// controls and key bindings are off too; the controls window handles input.
 const BASE_OPTIONS: &[(&str, &str)] = &[
     ("config", "no"),
     ("load-scripts", "no"),
@@ -33,12 +38,27 @@ const BASE_OPTIONS: &[(&str, &str)] = &[
     ("force-window", "yes"),
     ("idle", "yes"),
     ("keep-open", "no"),
-    // mpv's own on-screen controller and key bindings until Spaceport's controls arrive.
-    ("osc", "yes"),
-    ("input-default-bindings", "yes"),
-    ("input-vo-keyboard", "yes"),
+    ("osc", "no"),
+    ("input-default-bindings", "no"),
+    ("input-vo-keyboard", "no"),
+    ("input-cursor", "no"),
     ("network-timeout", "20"),
 ];
+
+/// Properties sent to the controls window, with the format each is read in.
+const OBSERVED: &[(&str, i32)] = &[
+    ("time-pos", FORMAT_DOUBLE),
+    ("duration", FORMAT_DOUBLE),
+    ("volume", FORMAT_DOUBLE),
+    ("speed", FORMAT_DOUBLE),
+    ("pause", FORMAT_FLAG),
+    ("mute", FORMAT_FLAG),
+    ("paused-for-cache", FORMAT_FLAG),
+    ("track-list", FORMAT_STRING),
+];
+
+/// The position changes every frame; the controls get it at most this often.
+const POSITION_INTERVAL: Duration = Duration::from_millis(250);
 
 /// What the UI hears about playback, as the `player` event.
 #[derive(Debug, Clone, Serialize)]
@@ -61,13 +81,41 @@ pub enum PlayerEvent {
     Closed,
 }
 
+/// A request from the controls window.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "action", rename_all = "camelCase")]
+pub enum Control {
+    TogglePause,
+    /// Seek to `seconds`, or by `seconds` when `relative`.
+    Seek {
+        seconds: f64,
+        relative: bool,
+    },
+    SetVolume {
+        volume: f64,
+    },
+    ToggleMute,
+    SetSpeed {
+        speed: f64,
+    },
+    SetAudioTrack {
+        id: i64,
+    },
+    ToggleFullscreen,
+    /// Leave fullscreen, or close the player when not in fullscreen.
+    Back,
+    Close,
+}
+
 /// The candidates of the current title, shared with the event thread.
 type SharedQueue = Arc<Mutex<Option<PlayQueue>>>;
+type SharedState = Arc<Mutex<PlaybackState>>;
 
 struct Session {
     mpv: Arc<Mpv>,
     surface: Surface,
     queue: SharedQueue,
+    state: SharedState,
 }
 
 #[derive(Default)]
@@ -134,16 +182,14 @@ impl Player {
             PlayQueue::new(candidates, Instant::now()).ok_or("there is no stream to play")?;
         let mut session = self.session.lock().unwrap();
         if let Some(existing) = session.as_ref() {
+            existing.state.lock().unwrap().title = title.to_string();
             existing.mpv.set_property("force-media-title", title)?;
             *existing.queue.lock().unwrap() = Some(queue);
             return apply(&existing.mpv, first);
         }
 
         let lib = self.lib(app)?;
-        let window = app
-            .get_webview_window("main")
-            .ok_or("the main window is gone")?;
-        let parent = window_handle(&window)?;
+        let parent = window_handle(&main_window(app)?)?;
         let surface = Surface::create(parent)?;
         let wid = surface.id().to_string();
         let mut options = BASE_OPTIONS.to_vec();
@@ -155,22 +201,69 @@ impl Player {
                 return Err(e);
             }
         };
-        // Esc leaves the player, like closing a video anywhere else. Older mpv builds without
-        // the keybind command still quit with q.
-        let _ = mpv.command(&["keybind", "ESC", "quit"]);
-        mpv.observe_double(OBSERVE_POSITION, "time-pos")?;
-        mpv.observe_double(OBSERVE_DURATION, "duration")?;
+        for (id, (name, format)) in OBSERVED.iter().enumerate() {
+            mpv.observe(id as u64 + 1, name, *format)?;
+        }
         mpv.set_property("force-media-title", title)?;
 
         let queue: SharedQueue = Arc::new(Mutex::new(Some(queue)));
-        spawn_event_thread(app.clone(), mpv.clone(), queue.clone());
+        let state: SharedState = Arc::new(Mutex::new(PlaybackState {
+            title: title.to_string(),
+            ..PlaybackState::default()
+        }));
+        spawn_event_thread(app.clone(), mpv.clone(), queue.clone(), state.clone());
         apply(&mpv, first)?;
         *session = Some(Session {
             mpv,
             surface,
             queue,
+            state,
         });
         Ok(())
+    }
+
+    /// Carries out a request from the controls window.
+    pub fn control(&self, app: &AppHandle, control: Control) -> Result<(), String> {
+        let session = self.session.lock().unwrap();
+        let Some(session) = session.as_ref() else {
+            return Ok(());
+        };
+        let mpv = &session.mpv;
+        match control {
+            Control::TogglePause => mpv.command(&["cycle", "pause"]),
+            Control::Seek { seconds, relative } => {
+                let mode = if relative { "relative" } else { "absolute" };
+                mpv.command(&["seek", &format!("{seconds:.2}"), mode])
+            }
+            Control::SetVolume { volume } => {
+                mpv.set_property("volume", &format!("{:.0}", volume.clamp(0.0, 130.0)))
+            }
+            Control::ToggleMute => mpv.command(&["cycle", "mute"]),
+            Control::SetSpeed { speed } => {
+                mpv.set_property("speed", &format!("{:.2}", speed.clamp(0.25, 4.0)))
+            }
+            Control::SetAudioTrack { id } => mpv.set_property("aid", &id.to_string()),
+            Control::ToggleFullscreen => {
+                let window = main_window(app)?;
+                let full = window.is_fullscreen().map_err(|e| e.to_string())?;
+                window.set_fullscreen(!full).map_err(|e| e.to_string())
+            }
+            Control::Back => {
+                let window = main_window(app)?;
+                if window.is_fullscreen().unwrap_or(false) {
+                    window.set_fullscreen(false).map_err(|e| e.to_string())
+                } else {
+                    mpv.command(&["quit"])
+                }
+            }
+            Control::Close => mpv.command(&["quit"]),
+        }
+    }
+
+    /// The current state, for a controls window that has just opened.
+    pub fn state(&self) -> Option<PlaybackState> {
+        let session = self.session.lock().unwrap();
+        session.as_ref().map(|s| s.state.lock().unwrap().clone())
     }
 
     /// Asks mpv to quit; the event thread then tears the session down.
@@ -187,13 +280,64 @@ impl Player {
         }
     }
 
+    pub fn is_open(&self) -> bool {
+        self.session.lock().unwrap().is_some()
+    }
+
     fn take_session(&self) -> Option<Session> {
         self.session.lock().unwrap().take()
     }
 }
 
+fn main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    app.get_webview_window("main")
+        .ok_or_else(|| "the main window is gone".to_string())
+}
+
+/// Opens the transparent controls window over the main window's client area. Must not run on
+/// the main thread or in a synchronous command: creating a web view there deadlocks on Windows.
+pub fn open_controls(app: &AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window(CONTROLS_WINDOW) {
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+    let main = main_window(app)?;
+    let window =
+        WebviewWindowBuilder::new(app, CONTROLS_WINDOW, WebviewUrl::App("player.html".into()))
+            .title("Spaceport player")
+            .parent(&main)
+            .map_err(|e| e.to_string())?
+            .transparent(true)
+            .decorations(false)
+            .shadow(false)
+            .resizable(false)
+            .skip_taskbar(true)
+            .focused(true)
+            .visible(false)
+            .build()
+            .map_err(|e| e.to_string())?;
+    place_controls(app);
+    window.show().map_err(|e| e.to_string())?;
+    let _ = window.set_focus();
+    Ok(())
+}
+
+/// Puts the controls window exactly over the main window's client area (physical pixels).
+pub fn place_controls(app: &AppHandle) {
+    let (Some(main), Some(controls)) = (
+        app.get_webview_window("main"),
+        app.get_webview_window(CONTROLS_WINDOW),
+    ) else {
+        return;
+    };
+    if let (Ok(position), Ok(size)) = (main.inner_position(), main.inner_size()) {
+        let _ = controls.set_position(tauri::Position::Physical(position));
+        let _ = controls.set_size(tauri::Size::Physical(size));
+    }
+}
+
 #[cfg(windows)]
-fn window_handle(window: &tauri::WebviewWindow) -> Result<isize, String> {
+fn window_handle(window: &WebviewWindow) -> Result<isize, String> {
     window
         .hwnd()
         .map(|hwnd| hwnd.0 as isize)
@@ -201,7 +345,7 @@ fn window_handle(window: &tauri::WebviewWindow) -> Result<isize, String> {
 }
 
 #[cfg(not(windows))]
-fn window_handle(_window: &tauri::WebviewWindow) -> Result<isize, String> {
+fn window_handle(_window: &WebviewWindow) -> Result<isize, String> {
     Err("the player is only available on Windows".to_string())
 }
 
@@ -223,7 +367,6 @@ fn apply(mpv: &Mpv, action: Action) -> Result<(), String> {
 fn follow(app: &AppHandle, mpv: &Mpv, action: Action, reason: &str) {
     match &action {
         Action::Load { label, .. } => {
-            let _ = mpv.command(&["show-text", &format!("{reason} - trying {label}"), "4000"]);
             let _ = app.emit(
                 "player",
                 PlayerEvent::Fallback {
@@ -249,13 +392,40 @@ fn follow(app: &AppHandle, mpv: &Mpv, action: Action, reason: &str) {
     }
 }
 
-/// Forwards mpv events to the UI, switches streams on failure, and removes the video window
-/// once mpv shuts down.
-fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue) {
+/// Forwards mpv events to the UI, switches streams on failure, and removes the video and
+/// controls windows once mpv shuts down.
+fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue, state: SharedState) {
     std::thread::spawn(move || {
+        let mut last_sent = Instant::now();
         loop {
             // Wake at least once a second so a stream that never starts can be timed out.
             let event = mpv.wait_event(1.0);
+            let now = Instant::now();
+
+            if let Event::Property { name, value } = &event {
+                let mut current = state.lock().unwrap();
+                let urgent = current.apply(name, value);
+                if name == "time-pos" {
+                    if let mpv::PropertyValue::Double(v) = value {
+                        if let Some(q) = queue.lock().unwrap().as_mut() {
+                            q.on_position(*v);
+                        }
+                    }
+                }
+                if name == "duration" {
+                    if let mpv::PropertyValue::Double(v) = value {
+                        if let Some(q) = queue.lock().unwrap().as_mut() {
+                            q.on_duration(*v);
+                        }
+                    }
+                }
+                if urgent || now.duration_since(last_sent) >= POSITION_INTERVAL {
+                    last_sent = now;
+                    let _ = app.emit("player-state", current.clone());
+                }
+                continue;
+            }
+
             let mut guard = queue.lock().unwrap();
             let Some(q) = guard.as_mut() else {
                 if event == Event::Shutdown {
@@ -263,22 +433,17 @@ fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue) {
                 }
                 continue;
             };
-            let now = Instant::now();
             match event {
                 Event::Shutdown => break,
                 Event::FileLoaded => {
                     q.on_loaded();
                     let label = q.current_label().to_string();
+                    drop(guard);
+                    let mut current = state.lock().unwrap();
+                    current.stream = label.clone();
+                    let _ = app.emit("player-state", current.clone());
                     let _ = app.emit("player", PlayerEvent::Loaded { label });
                 }
-                Event::Property {
-                    name,
-                    value: PropertyValue::Double(v),
-                } => match name.as_str() {
-                    "time-pos" => q.on_position(v),
-                    "duration" => q.on_duration(v),
-                    _ => {}
-                },
                 Event::Failed(error) => {
                     let action = q.on_failed(&error, now);
                     drop(guard);
@@ -310,6 +475,13 @@ fn spawn_event_thread(app: AppHandle, mpv: Arc<Mpv>, queue: SharedQueue) {
                 // Destroying the last Arc ends mpv; the window goes after it stops drawing.
                 drop(session.mpv);
                 session.surface.destroy();
+            }
+            if let Some(controls) = handle.get_webview_window(CONTROLS_WINDOW) {
+                let _ = controls.destroy();
+            }
+            if let Some(main) = handle.get_webview_window("main") {
+                let _ = main.set_fullscreen(false);
+                let _ = main.set_focus();
             }
             let _ = handle.emit("player", PlayerEvent::Closed);
         });

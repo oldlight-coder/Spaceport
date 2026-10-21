@@ -299,11 +299,11 @@ async fn streams_fetch(
 }
 
 /// Plays the first of the ranked candidates in the embedded player and falls back to the next
-/// on failure. Runs on the main thread because it creates the video window.
+/// on failure, then opens the controls window. Async because creating a window from a
+/// synchronous command deadlocks on Windows; the video window itself is made on the main thread.
 #[tauri::command]
-fn player_open(
+async fn player_open(
     app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
     candidates: Vec<player::Candidate>,
     title: String,
 ) -> Result<(), String> {
@@ -314,12 +314,38 @@ fn player_open(
     if candidates.is_empty() {
         return Err("none of these streams can be played yet".to_string());
     }
-    state.player.open(&app, candidates, &title)
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let state = handle.state::<AppState>();
+        let _ = sender.send(state.player.open(&handle, candidates, &title));
+    })
+    .map_err(|e| e.to_string())?;
+    receiver
+        .recv()
+        .map_err(|_| "the player did not start".to_string())??;
+    player::open_controls(&app)
 }
 
 #[tauri::command]
 fn player_close(state: tauri::State<'_, AppState>) {
     state.player.close();
+}
+
+/// A button or key press in the controls window.
+#[tauri::command]
+fn player_control(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    control: player::Control,
+) -> Result<(), String> {
+    state.player.control(&app, control)
+}
+
+/// The playback state for a controls window that has just loaded.
+#[tauri::command]
+fn player_state(state: tauri::State<'_, AppState>) -> Option<player::PlaybackStateView> {
+    state.player.state()
 }
 
 #[tauri::command]
@@ -371,10 +397,20 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Resized(size) = event {
-                if let Some(state) = window.try_state::<AppState>() {
-                    state.player.resize(size.width, size.height);
+            if window.label() != "main" {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::Resized(size) => {
+                    if let Some(state) = window.try_state::<AppState>() {
+                        if state.player.is_open() {
+                            state.player.resize(size.width, size.height);
+                            player::place_controls(window.app_handle());
+                        }
+                    }
                 }
+                tauri::WindowEvent::Moved(_) => player::place_controls(window.app_handle()),
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -395,7 +431,9 @@ pub fn run() {
             settings_get,
             settings_set,
             player_open,
-            player_close
+            player_close,
+            player_control,
+            player_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running Spaceport");
