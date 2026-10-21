@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { onPlayerEvent } from "./api/player";
 import { useWatching } from "./watching";
@@ -23,14 +23,18 @@ export const refreshNewEpisodes = () => window.dispatchEvent(new Event(REFRESH))
 export function useNewEpisodesLoader(): NewEpisodes {
   const watching = useWatching();
   const [found, setFound] = useState<NewEpisodes>({});
+  // Only the newest check's answer is shown; an older one can finish later.
+  const latest = useRef(0);
   const tracked = watching.map((i) => ({ id: i.id, type: i.type, since: i.since ?? null }));
   const key = JSON.stringify(tracked);
   useEffect(() => {
     let current = true;
-    const load = () =>
+    const load = () => {
+      const ticket = ++latest.current;
       invoke<NewEpisodes>("new_episodes", { tracked })
-        .then((result) => current && setFound(result))
+        .then((result) => current && ticket === latest.current && setFound(result ?? {}))
         .catch(() => {});
+    };
     load();
     window.addEventListener(REFRESH, load);
     const unlisten = onPlayerEvent((event) => {

@@ -87,8 +87,14 @@ export function themeVariables(appearance: Appearance, forceDark = false) {
   return { vars, dark };
 }
 
+// The listener following Windows' mode for the appearance painted last; one at a time, so an
+// older "follow Windows" choice cannot repaint over a newer fixed one.
+let stopFollowing: () => void = () => {};
+
 /** Sets the colours on the page; returns a function that stops following the system. */
 export function applyTheme(appearance: Appearance, forceDark = false): () => void {
+  stopFollowing();
+  stopFollowing = () => {};
   const paint = () => {
     const { vars, dark } = themeVariables(appearance, forceDark);
     const root = document.documentElement;
@@ -100,7 +106,9 @@ export function applyTheme(appearance: Appearance, forceDark = false): () => voi
   if (forceDark || appearance.mode !== "system") return () => {};
   const query = darkQuery();
   query?.addEventListener("change", paint);
-  return () => query?.removeEventListener("change", paint);
+  const stop = () => query?.removeEventListener("change", paint);
+  stopFollowing = stop;
+  return stop;
 }
 
 // The last appearance is kept here too, so the next start paints it before settings load.

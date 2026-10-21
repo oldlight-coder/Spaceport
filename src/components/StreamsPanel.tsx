@@ -41,7 +41,10 @@ export default function StreamsPanel({ type, videoId, heading, onClose, onPick }
   const [addon, setAddon] = useState("");
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement | null)?.closest("input, textarea, select");
+      if (e.key === "Escape" && !typing) onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

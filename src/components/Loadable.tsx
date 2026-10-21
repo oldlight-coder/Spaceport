@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useRetryWhenOnline } from "../online";
 import { ListSkeleton } from "./Skeleton";
 
@@ -10,11 +10,14 @@ export type Load<T> =
 /** Runs `load` on mount and returns its state plus a reload function. */
 export function useLoad<T>(load: () => Promise<T>) {
   const [state, setState] = useState<Load<T>>({ status: "loading" });
+  // Only the newest load's answer is kept; an older one may finish after it.
+  const latest = useRef(0);
   const reload = useCallback(() => {
+    const ticket = ++latest.current;
     setState({ status: "loading" });
     load()
-      .then((data) => setState({ status: "ready", data }))
-      .catch((e) => setState({ status: "error", message: String(e) }));
+      .then((data) => ticket === latest.current && setState({ status: "ready", data }))
+      .catch((e) => ticket === latest.current && setState({ status: "error", message: String(e) }));
   }, [load]);
   useEffect(reload, [reload]);
   // A load that failed (often for want of a connection) is tried again once it is back.

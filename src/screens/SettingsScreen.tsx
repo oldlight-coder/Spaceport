@@ -24,7 +24,7 @@ interface Props {
   email: string;
   settings: Settings;
   onChange: (settings: Settings) => Promise<void>;
-  onSignOut: () => void;
+  onSignOut: () => Promise<void>;
   signingOut: boolean;
 }
 
@@ -64,22 +64,25 @@ function shrinkImage(file: File): Promise<string> {
 
 export default function SettingsScreen({ email, settings, onChange, onSignOut, signingOut }: Props) {
   const [error, setError] = useState<string | null>(null);
+  // Changes merge into the newest settings, not the copy a delayed save captured.
+  const latest = useRef(settings);
+  latest.current = settings;
 
   async function update(patch: Partial<Settings>) {
     setError(null);
     try {
-      await onChange({ ...settings, ...patch });
+      await onChange({ ...latest.current, ...patch });
     } catch (e) {
       setError(String(e));
     }
   }
 
   const updateFilters = (patch: Partial<Settings["filters"]>) =>
-    update({ filters: { ...settings.filters, ...patch } });
+    update({ filters: { ...latest.current.filters, ...patch } });
 
   const style = settings.subtitleStyle;
   const updateStyle = (patch: Partial<SubtitleStyle>) =>
-    update({ subtitleStyle: { ...style, ...patch } });
+    update({ subtitleStyle: { ...latest.current.subtitleStyle, ...patch } });
 
   async function pickAvatar(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -92,7 +95,6 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
     }
   }
 
-  const maxSizeGb = settings.filters.maxSize ? Math.round(settings.filters.maxSize / GIB) : "";
 
   return (
     <div className="settings">
@@ -103,7 +105,9 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
         <h2>Appearance</h2>
         <AppearanceSettings
           value={settings.appearance}
-          onChange={(appearance) => update({ appearance })}
+          onChange={(patch) =>
+            update({ appearance: { ...latest.current.appearance, ...patch } })
+          }
         />
       </section>
 
@@ -124,7 +128,11 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
                   Remove picture
                 </button>
               )}
-              <button className="secondary" onClick={onSignOut} disabled={signingOut}>
+              <button
+                className="secondary"
+                onClick={() => onSignOut().catch((e) => setError(`Could not sign out: ${e}`))}
+                disabled={signingOut}
+              >
                 Sign out
               </button>
             </div>
@@ -178,14 +186,9 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
           </label>
           <label className="setting">
             <span className="setting-label">Maximum size (GB)</span>
-            <input
-              type="number"
-              min={1}
-              placeholder="No limit"
-              value={maxSizeGb}
-              onChange={(e) =>
-                updateFilters({ maxSize: e.target.value ? Number(e.target.value) * GIB : null })
-              }
+            <SizeField
+              bytes={settings.filters.maxSize}
+              onChange={(maxSize) => updateFilters({ maxSize })}
             />
           </label>
           <fieldset className="setting">
@@ -343,9 +346,31 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
   );
 }
 
+/** Gigabytes with one decimal; empty, zero or nonsense means no limit. */
+function SizeField({ bytes, onChange }: { bytes: number | null; onChange: (b: number | null) => void }) {
+  const shown = (b: number | null) => (b ? String(Math.round((b / GIB) * 10) / 10) : "");
+  // The text as typed ("1." mid-typing), reset when the saved value changes elsewhere.
+  const [text, setText] = useState(() => shown(bytes));
+  useEffect(() => setText((current) => (Number(current) * GIB === bytes ? current : shown(bytes))), [bytes]);
+  return (
+    <input
+      type="number"
+      min={0.1}
+      step={0.1}
+      placeholder="No limit"
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const gb = Number(e.target.value);
+        onChange(e.target.value && gb > 0 && Number.isFinite(gb) ? Math.round(gb * GIB) : null);
+      }}
+    />
+  );
+}
+
 interface AppearanceProps {
   value: Appearance;
-  onChange: (appearance: Appearance) => void;
+  onChange: (patch: Partial<Appearance>) => void;
 }
 
 /** Light, dark or Windows' mode, and the accent colour the Material You palette comes from. */
@@ -359,7 +384,7 @@ function AppearanceSettings({ value, onChange }: AppearanceProps) {
   function pickAccent(next: string, wait = 0) {
     setAccent(next);
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => onChange({ ...value, accent: next }), wait);
+    timer.current = window.setTimeout(() => onChange({ accent: next }), wait);
   }
 
   const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -374,7 +399,7 @@ function AppearanceSettings({ value, onChange }: AppearanceProps) {
               role="radio"
               aria-checked={value.mode === mode.value}
               className={value.mode === mode.value ? "active" : undefined}
-              onClick={() => onChange({ ...value, mode: mode.value })}
+              onClick={() => onChange({ mode: mode.value })}
             >
               {mode.label}
             </button>

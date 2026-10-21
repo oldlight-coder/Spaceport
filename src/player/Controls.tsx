@@ -368,18 +368,22 @@ export default function Controls() {
     [state?.volume, wake, skip, menu],
   );
 
+  // Registered once: the state changes four times a second, and re-registering the forwarded
+  // key listener that often would drop keys sent in between.
+  const keyHandler = useRef(handleKey);
+  keyHandler.current = handleKey;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (handleKey(e.key)) e.preventDefault();
+      if (keyHandler.current(e.key)) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
-    const unlisten = listen<string>(PLAYER_KEY_EVENT, (e) => handleKey(e.payload));
+    const unlisten = listen<string>(PLAYER_KEY_EVENT, (e) => keyHandler.current(e.payload));
     return () => {
       window.removeEventListener("keydown", onKey);
       unlisten.then((stop) => stop());
     };
-  }, [handleKey]);
+  }, []);
 
   // A single click pauses (or closes an open menu); a double click toggles fullscreen.
   function onSurfaceClick(e: React.MouseEvent) {

@@ -62,6 +62,12 @@ export default function HomeScreen({ user, onSession }: Props) {
   function go(next: Page) {
     setPage(next);
     setTitle(null);
+    // The player saves some choices (subtitle size) on its own; show what is stored now.
+    if (next === "settings") {
+      getSettings()
+        .then(setSettings)
+        .catch(() => {});
+    }
   }
 
   function openAddons() {

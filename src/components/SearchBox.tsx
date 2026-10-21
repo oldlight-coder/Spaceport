@@ -67,9 +67,17 @@ export default function SearchBox({ onSearch }: Props) {
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (active >= 0 && active < shownHits.length) return pick(shownHits[active]);
-    if (active >= shownHits.length) return run(recent[active - shownHits.length]);
+    // `highlighted` is -1 when the remembered row no longer exists (a list that shrank).
+    const hit = highlighted >= 0 ? shownHits[highlighted] : undefined;
+    const term = highlighted >= shownHits.length ? recent[highlighted - shownHits.length] : undefined;
+    if (hit) return pick(hit);
+    if (term) return run(term);
     if (typed) run(typed);
+  }
+
+  function changeHistory(next: string[]) {
+    setHistory(next);
+    setActive(-1);
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -110,7 +118,10 @@ export default function SearchBox({ onSearch }: Props) {
           setInput(e.target.value);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setOpen(true);
+          setActive(-1);
+        }}
         aria-label="Search all addons"
         aria-autocomplete="list"
         autoComplete="off"
@@ -156,7 +167,7 @@ export default function SearchBox({ onSearch }: Props) {
             <>
               <div className="search-history-head">
                 <span className="muted small">Recent searches</span>
-                <button type="button" className="text-button" onClick={() => setHistory(clearHistory())}>
+                <button type="button" className="text-button" onClick={() => changeHistory(clearHistory())}>
                   Clear all
                 </button>
               </div>
@@ -177,7 +188,7 @@ export default function SearchBox({ onSearch }: Props) {
                     <button
                       type="button"
                       className="search-history-remove"
-                      onClick={() => setHistory(removeFromHistory(term))}
+                      onClick={() => changeHistory(removeFromHistory(term))}
                       aria-label={`Remove ${term} from recent searches`}
                       title="Remove"
                     >

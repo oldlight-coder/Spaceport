@@ -82,8 +82,15 @@ function useTitleProgress(id: string) {
 function useWatched(item: TitleInfo) {
   const [marks, setMarks] = useState<WatchedMarks>({ title: false, videos: [] });
   const [busy, setBusy] = useState(false);
+  // Reads and marks are numbered; only the newest one's answer is shown.
+  const latest = useRef(0);
   useEffect(() => {
-    const load = () => getWatched(item).then(setMarks).catch(() => {});
+    const load = () => {
+      const ticket = ++latest.current;
+      getWatched(item)
+        .then((m) => ticket === latest.current && setMarks(m))
+        .catch(() => {});
+    };
     load();
     const unlisten = onPlayerEvent((event) => {
       if (event.kind === "closed") window.setTimeout(load, 1500);
@@ -96,8 +103,10 @@ function useWatched(item: TitleInfo) {
 
   async function mark(videos: string[], watched: boolean) {
     setBusy(true);
+    const ticket = ++latest.current;
     try {
-      setMarks(await setWatched(item, videos, watched));
+      const saved = await setWatched(item, videos, watched);
+      if (ticket === latest.current) setMarks(saved);
     } finally {
       setBusy(false);
     }
@@ -162,7 +171,17 @@ function Details({ meta }: { meta: MetaDetails }) {
   // handler below is registered once, so it reads the latest values from here.
   const playing = useRef<{ videoId: string; bingeGroup: string | null } | null>(null);
 
-  async function play(target: StreamTarget, ranked: RankedStream[], first?: RankedStream) {
+  // Each Play gets a number; an older request that finishes later must not start the player
+  // over a newer one (two quick clicks, or a stream picked while auto-play still searched).
+  const playRequest = useRef(0);
+
+  async function play(
+    target: StreamTarget,
+    ranked: RankedStream[],
+    first?: RankedStream,
+    request = ++playRequest.current,
+  ) {
+    if (request !== playRequest.current) return;
     const candidates = candidatesFrom(ranked, first);
     if (candidates.length === 0) {
       setNotice({ text: "No playable stream was found.", error: true });
@@ -188,6 +207,7 @@ function Details({ meta }: { meta: MetaDetails }) {
   /** Auto-play: rank the streams and start the best one without showing the picker. When
    * continuing a series, streams like the one just watched (`bingeGroup`) go first. */
   async function autoPlay(target: StreamTarget, bingeGroup: string | null = null) {
+    const request = ++playRequest.current;
     setNotice({ text: `Finding the best stream for ${target.heading}…` });
     try {
       const [results, saved] = await Promise.all([
@@ -196,6 +216,7 @@ function Details({ meta }: { meta: MetaDetails }) {
           .then((all) => all[target.videoId])
           .catch(() => undefined),
       ]);
+      if (request !== playRequest.current) return;
       // A video stopped part way resumes on the stream it was playing.
       const resumeSource = saved && saved.position > 0 ? saved.source : null;
       const ranked = preferSaved(results, resumeSource);
@@ -205,9 +226,9 @@ function Details({ meta }: { meta: MetaDetails }) {
         setTarget(target);
         return;
       }
-      await play(target, resumeSource ? ranked : preferBingeGroup(ranked, bingeGroup));
+      await play(target, resumeSource ? ranked : preferBingeGroup(ranked, bingeGroup), undefined, request);
     } catch (e) {
-      setNotice({ text: String(e), error: true });
+      if (request === playRequest.current) setNotice({ text: String(e), error: true });
     }
   }
 
