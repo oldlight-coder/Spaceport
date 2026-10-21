@@ -898,3 +898,17 @@ label.toggle > span {
   max-width: 420px;
   margin-top: 20px;
 }
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+  padding: 0;
+}

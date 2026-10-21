@@ -344,14 +344,16 @@ async fn player_open(
     }
     let candidates = playable;
     let settings = app.state::<AppState>().settings.lock().unwrap().clone();
-    let audio_languages = language::mpv_list(&settings.audio_languages);
+    let prefs = player::PlayerPrefs {
+        audio_languages: language::mpv_list(&settings.audio_languages),
+        subtitle_languages: language::mpv_list(&settings.subtitle_languages),
+        subtitle_style: settings.subtitle_style.clone(),
+    };
     let (sender, receiver) = std::sync::mpsc::channel();
     let handle = app.clone();
     app.run_on_main_thread(move || {
         let state = handle.state::<AppState>();
-        let result = state
-            .player
-            .open(&handle, candidates, &title, &audio_languages);
+        let result = state.player.open(&handle, candidates, &title, &prefs);
         let _ = sender.send(result);
     })
     .map_err(|e| e.to_string())?;
@@ -393,14 +395,54 @@ fn player_close(state: tauri::State<'_, AppState>) {
     state.player.close();
 }
 
-/// A button or key press in the controls window.
+/// A button or key press in the controls window. A subtitle size change is also saved as the
+/// new default.
 #[tauri::command]
 fn player_control(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     control: player::Control,
 ) -> Result<(), String> {
-    state.player.control(&app, control)
+    let scale = match &control {
+        player::Control::SetSubtitleScale { scale } => Some(*scale),
+        _ => None,
+    };
+    state.player.control(&app, control)?;
+    if let Some(scale) = scale {
+        let mut settings = state.settings.lock().unwrap().clone();
+        settings.subtitle_style.scale = scale.clamp(
+            settings::SubtitleStyle::MIN_SCALE,
+            settings::SubtitleStyle::MAX_SCALE,
+        );
+        state
+            .settings_store
+            .save(&settings)
+            .map_err(|e| e.to_string())?;
+        *state.settings.lock().unwrap() = settings;
+    }
+    Ok(())
+}
+
+/// Lets the user pick a subtitle file from this computer and shows it in the player.
+#[tauri::command]
+async fn player_load_subtitle(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_dialog::DialogExt;
+    let dialog = app
+        .dialog()
+        .file()
+        .set_title("Choose a subtitle file")
+        .add_filter(
+            "Subtitles",
+            &["srt", "ass", "ssa", "vtt", "sub", "idx", "sup", "smi"],
+        );
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_file())
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(file) = picked else {
+        return Ok(());
+    };
+    let path = file.into_path().map_err(|e| e.to_string())?;
+    app.state::<AppState>().player.add_subtitle_file(&path)
 }
 
 /// The playback state for a controls window that has just loaded.
@@ -423,6 +465,7 @@ fn settings_set(state: tauri::State<'_, AppState>, settings: Settings) -> Result
         .map_err(|e| e.to_string())?;
     state.torrents.set_dht(settings.torrent_dht);
     state.torrents.set_cache_limit(settings.torrent_cache_gb);
+    state.player.set_subtitle_style(&settings.subtitle_style);
     *state.settings.lock().unwrap() = settings.clone();
     Ok(settings)
 }
@@ -446,6 +489,7 @@ async fn addons_configure(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let settings_store = SettingsStore::new(&config_dir);
@@ -504,7 +548,8 @@ pub fn run() {
             player_open,
             player_close,
             player_control,
-            player_state
+            player_state,
+            player_load_subtitle
         ])
         .build(tauri::generate_context!())
         .expect("error while building Spaceport")

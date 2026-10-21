@@ -1,9 +1,18 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { onPlayerEvent } from "../api/player";
-import { control, Control, currentState, onPlaybackState, PlaybackState } from "../api/playerControls";
+import {
+  control,
+  Control,
+  currentState,
+  loadSubtitleFile,
+  onPlaybackState,
+  PlaybackState,
+} from "../api/playerControls";
 
 const HIDE_AFTER_MS = 3000;
 const SKIP_SECONDS = 10;
+const SUB_DELAY_STEP = 0.1;
+const SUB_SCALE_STEP = 0.1;
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 /** A seek counts as done once playback is this close to the target, in seconds. */
 const SEEK_TOLERANCE = 3;
@@ -37,6 +46,8 @@ interface Section {
   heading?: string;
   options: Option[];
   empty?: string;
+  /** Extra controls shown under the heading, before the options. */
+  content?: ReactNode;
 }
 
 /** A button in the control bar that opens a list of choices above it. */
@@ -67,6 +78,7 @@ function Menu({
           {sections.map((section, i) => (
             <div key={i} className="menu-section">
               {section.heading && <div className="menu-heading">{section.heading}</div>}
+              {section.content}
               {section.options.length === 0 && section.empty && (
                 <div className="menu-empty">{section.empty}</div>
               )}
@@ -201,6 +213,12 @@ export default function Controls() {
         case "f":
           send({ action: "toggleFullscreen" });
           break;
+        case "z":
+          send({ action: "adjustSubtitleDelay", seconds: -SUB_DELAY_STEP });
+          break;
+        case "x":
+          send({ action: "adjustSubtitleDelay", seconds: SUB_DELAY_STEP });
+          break;
         case "Escape":
           if (menu) setMenu(null);
           else send({ action: "back" });
@@ -251,6 +269,12 @@ export default function Controls() {
   const currentSub =
     embeddedSubs.find((t) => t.selected)?.label ?? addonSubs.find((s) => s.selected)?.label;
   const sources = state?.sources ?? [];
+  const subDelay = state?.subDelay ?? 0;
+  const subScale = state?.subScale ?? 1;
+  const setScale = (scale: number) => {
+    const clamped = Math.min(2, Math.max(0.5, scale));
+    send({ action: "setSubtitleScale", scale: Math.round(clamped * 10) / 10 });
+  };
   const speed = state?.speed ?? 1;
 
   let badge: ReactNode = null;
@@ -386,6 +410,67 @@ export default function Controls() {
                 ],
               },
               {
+                heading: "Adjust",
+                options: [],
+                content: (
+                  <div className="adjust">
+                    <div className="adjust-row">
+                      <span>Delay</span>
+                      <button
+                        onClick={() =>
+                          send({ action: "adjustSubtitleDelay", seconds: -SUB_DELAY_STEP })
+                        }
+                        aria-label="Show subtitles earlier"
+                      >
+                        −
+                      </button>
+                      <span className="adjust-value">
+                        {subDelay > 0 ? "+" : ""}
+                        {subDelay.toFixed(1)} s
+                      </span>
+                      <button
+                        onClick={() =>
+                          send({ action: "adjustSubtitleDelay", seconds: SUB_DELAY_STEP })
+                        }
+                        aria-label="Show subtitles later"
+                      >
+                        +
+                      </button>
+                      <button
+                        className="reset"
+                        onClick={() => send({ action: "resetSubtitleDelay" })}
+                        disabled={subDelay === 0}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <div className="adjust-row">
+                      <span>Size</span>
+                      <button
+                        onClick={() => setScale(subScale - SUB_SCALE_STEP)}
+                        aria-label="Smaller subtitles"
+                      >
+                        −
+                      </button>
+                      <span className="adjust-value">{Math.round(subScale * 100)}%</span>
+                      <button
+                        onClick={() => setScale(subScale + SUB_SCALE_STEP)}
+                        aria-label="Larger subtitles"
+                      >
+                        +
+                      </button>
+                      <button
+                        className="reset"
+                        onClick={() => setScale(1)}
+                        disabled={Math.abs(subScale - 1) < 0.01}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                ),
+              },
+              {
                 heading: "In the video file",
                 empty: "None",
                 options: embeddedSubs.map((t) => ({
@@ -406,6 +491,21 @@ export default function Controls() {
                   onSelect: () => choose({ action: "setSubtitle", track: null, key: s.key }),
                 })),
               },
+              {
+                heading: "From this computer",
+                options: [
+                  {
+                    key: "file",
+                    label: "Load from file…",
+                    selected: false,
+                    onSelect: () => {
+                      setMenu(null);
+                      loadSubtitleFile().catch((e) => setToast(String(e)));
+                    },
+                  },
+                ],
+              },
+
             ]}
           />
           <Menu

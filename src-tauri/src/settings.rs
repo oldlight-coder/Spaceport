@@ -15,6 +15,70 @@ const FILE_NAME: &str = "settings.json";
 /// The largest profile picture accepted, as a data URL. The UI shrinks pictures well below this.
 pub const MAX_AVATAR_LEN: usize = 512 * 1024;
 
+/// How subtitles look. Styled subtitles (ASS, common for anime) keep their own look apart from
+/// size and position.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SubtitleStyle {
+    /// Size relative to mpv's default, 0.5 to 2.0.
+    pub scale: f64,
+    /// Text colour as `#RRGGBB`.
+    pub color: String,
+    /// `"outline"` for outlined text, `"box"` for text on a dark box.
+    pub background: String,
+    /// Vertical position in percent of the screen height (100 is the bottom edge).
+    pub position: u8,
+}
+
+impl Default for SubtitleStyle {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            color: "#FFFFFF".to_string(),
+            background: "outline".to_string(),
+            position: 100,
+        }
+    }
+}
+
+impl SubtitleStyle {
+    pub const MIN_SCALE: f64 = 0.5;
+    pub const MAX_SCALE: f64 = 2.0;
+
+    fn validate(&self) -> Result<(), String> {
+        if !(Self::MIN_SCALE..=Self::MAX_SCALE).contains(&self.scale) {
+            return Err("subtitle size must be between 50% and 200%".into());
+        }
+        let hex = self.color.strip_prefix('#').unwrap_or_default();
+        if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err("subtitle colour must look like #RRGGBB".into());
+        }
+        if self.background != "outline" && self.background != "box" {
+            return Err("subtitle background must be outline or box".into());
+        }
+        if !(50..=100).contains(&self.position) {
+            return Err("subtitle position must be between 50 and 100".into());
+        }
+        Ok(())
+    }
+
+    /// The mpv properties that apply this style.
+    pub fn mpv_properties(&self) -> Vec<(&'static str, String)> {
+        let border = if self.background == "box" {
+            "background-box"
+        } else {
+            "outline-and-shadow"
+        };
+        vec![
+            ("sub-scale", format!("{:.2}", self.scale)),
+            ("sub-color", self.color.clone()),
+            ("sub-border-style", border.to_string()),
+            ("sub-back-color", "#B0000000".to_string()),
+            ("sub-pos", self.position.to_string()),
+        ]
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -33,6 +97,7 @@ pub struct Settings {
     /// Most gigabytes downloaded torrents may use; torrents not being watched are deleted,
     /// least recently watched first, beyond it. Everything is deleted when Spaceport exits.
     pub torrent_cache_gb: u32,
+    pub subtitle_style: SubtitleStyle,
 }
 
 impl Default for Settings {
@@ -45,6 +110,7 @@ impl Default for Settings {
             avatar: None,
             torrent_dht: true,
             torrent_cache_gb: 10,
+            subtitle_style: SubtitleStyle::default(),
         }
     }
 }
@@ -79,6 +145,9 @@ impl Settings {
                 "languages must be two-letter codes".into(),
             ));
         }
+        self.subtitle_style
+            .validate()
+            .map_err(SettingsError::Invalid)?;
         if !(1..=2000).contains(&self.torrent_cache_gb) {
             return Err(SettingsError::Invalid(
                 "the torrent cache must be between 1 and 2000 GB".into(),
@@ -187,6 +256,39 @@ mod tests {
             ..Settings::default()
         };
         assert!(bad_avatar.validate().is_err());
+    }
+
+    #[test]
+    fn checks_subtitle_style() {
+        let mut settings = Settings::default();
+        assert!(settings.validate().is_ok());
+        settings.subtitle_style.scale = 3.0;
+        assert!(settings.validate().is_err());
+        settings.subtitle_style = SubtitleStyle {
+            color: "yellow".into(),
+            ..SubtitleStyle::default()
+        };
+        assert!(settings.validate().is_err());
+        settings.subtitle_style = SubtitleStyle {
+            background: "glow".into(),
+            ..SubtitleStyle::default()
+        };
+        assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn subtitle_style_maps_to_mpv() {
+        let style = SubtitleStyle {
+            scale: 1.25,
+            color: "#FFFF00".into(),
+            background: "box".into(),
+            position: 95,
+        };
+        let props = style.mpv_properties();
+        assert!(props.contains(&("sub-scale", "1.25".to_string())));
+        assert!(props.contains(&("sub-color", "#FFFF00".to_string())));
+        assert!(props.contains(&("sub-border-style", "background-box".to_string())));
+        assert!(props.contains(&("sub-pos", "95".to_string())));
     }
 
     #[test]

@@ -56,6 +56,10 @@ pub struct PlaybackState {
     /// Every addon subtitle with its URL, kept for loading on demand.
     #[serde(skip)]
     pub addon_subtitle_files: Vec<AddonSubtitle>,
+    /// Subtitle timing offset in seconds (positive shows them later).
+    pub sub_delay: f64,
+    /// Subtitle size relative to the default.
+    pub sub_scale: f64,
     /// Labels of the streams that can be switched to, best first.
     pub sources: Vec<String>,
     pub source_index: usize,
@@ -178,6 +182,8 @@ impl PlaybackState {
             ("mute", PropertyValue::Flag(v)) => self.muted = *v,
             ("paused-for-cache", PropertyValue::Flag(v)) => self.buffering = *v,
             ("seeking", PropertyValue::Flag(v)) => self.seeking = *v,
+            ("sub-delay", PropertyValue::Double(v)) => self.sub_delay = *v,
+            ("sub-scale", PropertyValue::Double(v)) => self.sub_scale = *v,
             ("seekable", PropertyValue::Flag(v)) => self.seekable = *v,
             ("track-list", PropertyValue::Text(json)) => {
                 self.audio_tracks = tracks(json, "audio");

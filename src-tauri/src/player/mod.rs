@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::settings::SubtitleStyle;
 use crate::stremio::subtitles::AddonSubtitle;
 use mpv::{Event, Mpv, MpvLib, FORMAT_DOUBLE, FORMAT_FLAG, FORMAT_STRING};
 pub use queue::Candidate;
@@ -58,6 +59,8 @@ const OBSERVED: &[(&str, i32)] = &[
     ("paused-for-cache", FORMAT_FLAG),
     ("seeking", FORMAT_FLAG),
     ("seekable", FORMAT_FLAG),
+    ("sub-delay", FORMAT_DOUBLE),
+    ("sub-scale", FORMAT_DOUBLE),
     ("track-list", FORMAT_STRING),
 ];
 
@@ -110,6 +113,15 @@ pub enum Control {
         track: Option<i64>,
         key: Option<String>,
     },
+    /// Move subtitles later (positive) or earlier (negative) by `seconds`.
+    AdjustSubtitleDelay {
+        seconds: f64,
+    },
+    ResetSubtitleDelay,
+    /// Subtitle size relative to the default, 0.5 to 2.0.
+    SetSubtitleScale {
+        scale: f64,
+    },
     /// Switch to another of the ranked streams, keeping the position.
     SetSource {
         index: usize,
@@ -129,6 +141,33 @@ struct Session {
     surface: Surface,
     queue: SharedQueue,
     state: SharedState,
+}
+
+/// The user's preferences the player starts with.
+pub struct PlayerPrefs {
+    /// mpv's `alang` list for picking the dub.
+    pub audio_languages: String,
+    /// mpv's `slang` list for picking a subtitle track in the file.
+    pub subtitle_languages: String,
+    pub subtitle_style: SubtitleStyle,
+}
+
+/// Applies the subtitle language and style. These are properties rather than start-up options,
+/// so an mpv build that lacks one of them still plays.
+fn apply_subtitle_prefs(mpv: &Mpv, prefs: &PlayerPrefs) {
+    if !prefs.subtitle_languages.is_empty() {
+        let _ = mpv.set_property("slang", &prefs.subtitle_languages);
+        // Subtitles in a preferred language are turned on only when the audio is in another
+        // language; with matching audio only forced (signs and songs) subtitles are shown.
+        let _ = mpv.set_property("subs-with-matching-audio", "forced");
+    }
+    apply_style(mpv, &prefs.subtitle_style);
+}
+
+fn apply_style(mpv: &Mpv, style: &SubtitleStyle) {
+    for (name, value) in style.mpv_properties() {
+        let _ = mpv.set_property(name, &value);
+    }
 }
 
 #[derive(Default)]
@@ -185,13 +224,12 @@ impl Player {
 
     /// Plays the first of `candidates` (ranked best first) and falls back down the list when a
     /// stream fails. Reuses the open player if there is one. Main thread only.
-    /// `audio_languages` is mpv's `alang` list for picking the dub.
     pub fn open(
         &self,
         app: &AppHandle,
         candidates: Vec<Candidate>,
         title: &str,
-        audio_languages: &str,
+        prefs: &PlayerPrefs,
     ) -> Result<(), String> {
         let (queue, first) =
             PlayQueue::new(candidates, Instant::now()).ok_or("there is no stream to play")?;
@@ -215,8 +253,8 @@ impl Player {
         let wid = surface.id().to_string();
         let mut options = BASE_OPTIONS.to_vec();
         options.push(("wid", &wid));
-        if !audio_languages.is_empty() {
-            options.push(("alang", audio_languages));
+        if !prefs.audio_languages.is_empty() {
+            options.push(("alang", &prefs.audio_languages));
         }
         let mpv = match Mpv::new(lib, &options) {
             Ok(mpv) => Arc::new(mpv),
@@ -229,6 +267,7 @@ impl Player {
             mpv.observe(id as u64 + 1, name, *format)?;
         }
         mpv.set_property("force-media-title", title)?;
+        apply_subtitle_prefs(&mpv, prefs);
 
         let queue: SharedQueue = Arc::new(Mutex::new(Some(queue)));
         let state: SharedState = Arc::new(Mutex::new(PlaybackState {
@@ -300,6 +339,17 @@ impl Player {
                     }
                 }
             }
+            Control::AdjustSubtitleDelay { seconds } => {
+                mpv.command(&["add", "sub-delay", &format!("{seconds:.3}")])
+            }
+            Control::ResetSubtitleDelay => mpv.set_property("sub-delay", "0"),
+            Control::SetSubtitleScale { scale } => mpv.set_property(
+                "sub-scale",
+                &format!(
+                    "{:.2}",
+                    scale.clamp(SubtitleStyle::MIN_SCALE, SubtitleStyle::MAX_SCALE)
+                ),
+            ),
             Control::SetSource { index } => {
                 let action = session
                     .queue
@@ -331,6 +381,25 @@ impl Player {
             }
             Control::Close => mpv.command(&["quit"]),
         }
+    }
+
+    /// Applies a new subtitle style to the open player, after Settings changed.
+    pub fn set_subtitle_style(&self, style: &SubtitleStyle) {
+        if let Some(session) = self.session.lock().unwrap().as_ref() {
+            apply_style(&session.mpv, style);
+        }
+    }
+
+    /// Loads a subtitle file from this computer and shows it.
+    pub fn add_subtitle_file(&self, path: &std::path::Path) -> Result<(), String> {
+        let session = self.session.lock().unwrap();
+        let session = session.as_ref().ok_or("nothing is playing")?;
+        let path = path.to_str().ok_or("the file name cannot be read")?;
+        let name = std::path::Path::new(path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Subtitle file");
+        session.mpv.command(&["sub-add", path, "select", name])
     }
 
     /// Offers the subtitles the addons returned for the playing video.

@@ -27,6 +27,8 @@ export interface PlaybackState {
   muted: boolean;
   speed: number;
   seeking: boolean;
+  subDelay: number;
+  subScale: number;
   seekable: boolean;
   audioTracks: Track[];
   subtitleTracks: Track[];
@@ -44,11 +46,17 @@ export type Control =
   | { action: "setAudioTrack"; id: number }
   | { action: "setSubtitle"; track: number | null; key: string | null }
   | { action: "setSource"; index: number }
+  | { action: "adjustSubtitleDelay"; seconds: number }
+  | { action: "resetSubtitleDelay" }
+  | { action: "setSubtitleScale"; scale: number }
   | { action: "toggleFullscreen" }
   | { action: "back" }
   | { action: "close" };
 
 export const control = (c: Control) => invoke<void>("player_control", { control: c });
+
+/** Opens a file picker and loads the chosen subtitle file into the player. */
+export const loadSubtitleFile = () => invoke<void>("player_load_subtitle");
 
 export const currentState = () => invoke<PlaybackState | null>("player_state");
 

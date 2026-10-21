@@ -161,3 +161,10 @@ pass on Windows. The owner tests each milestone before the next one starts.
   Settings (10 GB default) deletes idle torrents least recently watched first, never the one
   playing (open stream or used in the last 2 min); torrents nobody watches are paused when the
   player closes and resume when reopened. Stream server stays 127.0.0.1-only. M5 code complete.
+- 2026-10-21: M5 accepted by owner on Windows (torrent start, seeking, listeners, cache cleanup).
+  Besides DHT, librqbit's UDP tracker client socket is bound on all interfaces; it only talks to
+  trackers Spaceport contacts.
+- 2026-10-21: M6 subtitles implemented (not yet ticked: needs a Windows check). Load a subtitle file
+  from the computer (file picker), delay -/+0.1 s (also Z/X) and reset, size -/+ in the player;
+  Settings > Subtitles for size, colour, outline or box, position (applied live and on start);
+  preferred subtitle languages auto-select a track in the file when the audio differs.

@@ -1,10 +1,16 @@
 import { ChangeEvent, useState } from "react";
-import { CODECS, Settings } from "../api/settings";
+import { CODECS, Settings, SubtitleStyle } from "../api/settings";
 import Avatar from "../components/Avatar";
 import LanguageList from "../components/LanguageList";
 import AddonsScreen from "./AddonsScreen";
 
 const GIB = 1024 ** 3;
+
+const SUBTITLE_COLOURS = [
+  { name: "White", value: "#FFFFFF" },
+  { name: "Yellow", value: "#FFFF00" },
+  { name: "Cyan", value: "#00FFFF" },
+];
 const AVATAR_SIZE = 128;
 
 interface Props {
@@ -63,6 +69,10 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
 
   const updateFilters = (patch: Partial<Settings["filters"]>) =>
     update({ filters: { ...settings.filters, ...patch } });
+
+  const style = settings.subtitleStyle;
+  const updateStyle = (patch: Partial<SubtitleStyle>) =>
+    update({ subtitleStyle: { ...style, ...patch } });
 
   async function pickAvatar(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -185,6 +195,78 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
               ))}
             </div>
           </fieldset>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h2>Subtitles</h2>
+        <p className="muted small">
+          Applies to every video, including one that is playing. Styled subtitles (common for
+          anime) keep their own colours and outline.
+        </p>
+        <div className="settings-grid">
+          <label className="setting">
+            <span className="setting-label">Size: {Math.round(style.scale * 100)}%</span>
+            <input
+              type="range"
+              min={50}
+              max={200}
+              step={10}
+              value={Math.round(style.scale * 100)}
+              onChange={(e) => updateStyle({ scale: Number(e.target.value) / 100 })}
+            />
+          </label>
+          <fieldset className="setting">
+            <legend className="setting-label">Colour</legend>
+            <div className="checks">
+              {SUBTITLE_COLOURS.map(({ name, value }) => (
+                <label key={value}>
+                  <input
+                    type="radio"
+                    name="subtitle-colour"
+                    checked={style.color.toUpperCase() === value}
+                    onChange={() => updateStyle({ color: value })}
+                  />{" "}
+                  <span className="swatch" style={{ background: value }} /> {name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="setting">
+            <legend className="setting-label">Background</legend>
+            <div className="checks">
+              <label>
+                <input
+                  type="radio"
+                  name="subtitle-background"
+                  checked={style.background === "outline"}
+                  onChange={() => updateStyle({ background: "outline" })}
+                />{" "}
+                Outline
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="subtitle-background"
+                  checked={style.background === "box"}
+                  onChange={() => updateStyle({ background: "box" })}
+                />{" "}
+                Dark box
+              </label>
+            </div>
+          </fieldset>
+          <label className="setting">
+            <span className="setting-label">
+              Position: {style.position === 100 ? "bottom" : `${100 - style.position}% higher`}
+            </span>
+            <input
+              type="range"
+              min={50}
+              max={100}
+              value={style.position}
+              onChange={(e) => updateStyle({ position: Number(e.target.value) })}
+            />
+          </label>
         </div>
       </section>
 

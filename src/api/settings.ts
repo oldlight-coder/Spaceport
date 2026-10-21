@@ -6,6 +6,16 @@ export interface StreamFilters {
   blockedCodecs: string[];
 }
 
+export interface SubtitleStyle {
+  /** Size relative to the default, 0.5 to 2. */
+  scale: number;
+  /** "#RRGGBB" */
+  color: string;
+  background: "outline" | "box";
+  /** Vertical position in percent of the screen height; 100 is the bottom. */
+  position: number;
+}
+
 export interface Settings {
   audioLanguages: string[];
   subtitleLanguages: string[];
@@ -14,6 +24,7 @@ export interface Settings {
   avatar: string | null;
   torrentDht: boolean;
   torrentCacheGb: number;
+  subtitleStyle: SubtitleStyle;
 }
 
 export const getSettings = () => invoke<Settings>("settings_get");

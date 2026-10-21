@@ -173,7 +173,7 @@ select option {
   bottom: calc(100% + 8px);
   min-width: 240px;
   max-width: 420px;
-  max-height: 60vh;
+  max-height: 75vh;
   overflow-y: auto;
   padding: 6px;
   border-radius: 10px;
@@ -231,4 +231,38 @@ select option {
   font-size: 12px;
   opacity: 0.6;
   white-space: nowrap;
+}
+
+.adjust {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 10px 8px;
+}
+
+.adjust-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.adjust-row > span:first-child {
+  width: 48px;
+}
+
+.adjust-row button {
+  min-width: 32px;
+  padding: 4px 8px;
+}
+
+.adjust-row button.reset {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.adjust-value {
+  min-width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
