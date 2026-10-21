@@ -82,8 +82,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - **Acceptance:** every screen reads well in light and dark mode with a few accent colors.
 
 ## M11. Search assistant
-- [ ] Autocomplete: title suggestions under the search field while typing, arrow keys and Enter
-- [ ] Forgiving search: typos and partial words still find titles ("Best matches" row)
+- [x] Autocomplete: title suggestions under the search field while typing, arrow keys and Enter
+- [x] Forgiving search: typos and partial words still find titles ("Best matches" row)
 - **Acceptance:** misspelled titles such as "breakng bad" or "the mandolorian" are found.
 
 ## Deferred (owner's choice, 2026-10-21)
@@ -281,3 +281,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
   search; search.rs merges and ranks. search_assist asks every search catalog (looser forms
   always for the search page, for autocomplete only when the query finds under 3), caching
   answers for 10 minutes. Suggestions under the search field, "Best matches" row on the page.
+- 2026-10-21: M11 accepted by the owner on Windows; ticked.
