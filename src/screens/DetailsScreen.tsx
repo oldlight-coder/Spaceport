@@ -7,6 +7,7 @@ import {
   openPlayer,
   PLAY_NEXT_EVENT,
   preferBingeGroup,
+  preferSaved,
 } from "../api/player";
 import { episodeHeading, nextEpisode } from "../episodes";
 import { titleProgress, VideoProgress, watchedShare } from "../api/progress";
@@ -180,13 +181,21 @@ function Details({ meta }: { meta: MetaDetails }) {
   async function autoPlay(target: StreamTarget, bingeGroup: string | null = null) {
     setNotice({ text: `Finding the best stream for ${target.heading}…` });
     try {
-      const results = await fetchStreams(meta.type, target.videoId);
-      if (results.streams.length === 0) {
+      const [results, saved] = await Promise.all([
+        fetchStreams(meta.type, target.videoId),
+        titleProgress(meta.id)
+          .then((all) => all[target.videoId])
+          .catch(() => undefined),
+      ]);
+      // A video stopped part way resumes on the stream it was playing.
+      const resumeSource = saved && saved.position > 0 ? saved.source : null;
+      const ranked = preferSaved(results, resumeSource);
+      if (ranked.length === 0) {
         setNotice({ text: "No stream passed your filters; choose one yourself.", error: true });
         setTarget(target);
         return;
       }
-      await play(target, preferBingeGroup(results.streams, bingeGroup));
+      await play(target, resumeSource ? ranked : preferBingeGroup(ranked, bingeGroup));
     } catch (e) {
       setNotice({ text: String(e), error: true });
     }

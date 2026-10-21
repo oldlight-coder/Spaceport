@@ -32,6 +32,8 @@ pub struct WatchReport {
     pub watched_seconds: f64,
     /// The video played to its end.
     pub finished: bool,
+    /// Key of the stream that was playing, to start on it again when resuming.
+    pub source: Option<String>,
 }
 
 #[derive(Debug)]
@@ -43,6 +45,7 @@ pub struct WatchTracker {
     last_position: Option<f64>,
     watched: f64,
     last_report: Instant,
+    source: Option<String>,
 }
 
 impl WatchTracker {
@@ -55,6 +58,7 @@ impl WatchTracker {
             last_position: None,
             watched: 0.0,
             last_report: now,
+            source: None,
         }
     }
 
@@ -62,8 +66,10 @@ impl WatchTracker {
         &self.target.video_id
     }
 
-    pub fn on_loaded(&mut self) {
+    /// A stream started playing; `source` is its key, when it has one.
+    pub fn on_loaded(&mut self, source: Option<String>) {
         self.started = true;
+        self.source = source;
     }
 
     pub fn on_position(&mut self, seconds: f64) {
@@ -107,6 +113,7 @@ impl WatchTracker {
             duration: self.duration,
             watched_seconds: self.watched,
             finished,
+            source: self.source.clone(),
         };
         self.watched = 0.0;
         self.last_report = now;
@@ -145,7 +152,7 @@ mod tests {
     fn counts_only_real_playback() {
         let now = Instant::now();
         let mut w = WatchTracker::new(target(), now);
-        w.on_loaded();
+        w.on_loaded(None);
         w.on_duration(3000.0);
         for t in [0.0, 1.0, 2.0, 3.0] {
             w.on_position(t);
@@ -165,7 +172,7 @@ mod tests {
     fn periodic_report_while_playing() {
         let now = Instant::now();
         let mut w = WatchTracker::new(target(), now);
-        w.on_loaded();
+        w.on_loaded(None);
         assert!(!w.due(now + Duration::from_secs(10), false));
         assert!(w.due(now + REPORT_INTERVAL, false));
         assert!(!w.due(now + REPORT_INTERVAL, true));
@@ -177,11 +184,24 @@ mod tests {
     fn finished_reports_the_full_length() {
         let now = Instant::now();
         let mut w = WatchTracker::new(target(), now);
-        w.on_loaded();
+        w.on_loaded(None);
         w.on_duration(3000.0);
         w.on_position(2995.0);
         let report = w.report(now, true).unwrap();
         assert!(report.finished);
         assert_eq!(report.position, 3000.0);
+    }
+
+    #[test]
+    fn reports_the_stream_playing() {
+        let now = Instant::now();
+        let mut w = WatchTracker::new(target(), now);
+        w.on_loaded(Some("first".into()));
+        // A fallback or a switch in the Source menu loads another stream.
+        w.on_loaded(Some("second".into()));
+        assert_eq!(
+            w.report(now, false).unwrap().source.as_deref(),
+            Some("second")
+        );
     }
 }

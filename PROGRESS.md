@@ -195,3 +195,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   is also searched with the name before ":", and when no skip times load the player top bar says
   where the lookup stopped ("AniSkip: ..."). Tests for both cases.
 - 2026-10-21: Kitsu answered 406 to the MyAnimeList lookup; it now gets JSON:API's Accept header.
+- 2026-10-21: Resume keeps the source: the stream playing (after a manual pick, fallback or Source
+  menu switch) is saved with the position in resume.json by a key (torrent hash and file, or addon
+  and file name; never the link) and goes first when that video is played again.

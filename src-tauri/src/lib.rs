@@ -314,6 +314,8 @@ async fn streams_fetch(
 #[serde(rename_all = "camelCase")]
 struct PlayCandidate {
     label: String,
+    /// Identifies the stream across visits; see `VideoProgress::source`.
+    key: Option<String>,
     url: Option<String>,
     torrent: Option<torrent::TorrentSource>,
 }
@@ -347,6 +349,7 @@ async fn player_open(
         playable.push(player::Candidate {
             url,
             label: candidate.label,
+            key: candidate.key,
         });
     }
     if playable.is_empty() {
@@ -444,7 +447,7 @@ async fn player_open(
 /// offline does not hold up playback.
 async fn resume_position(app: &tauri::AppHandle, title_id: &str, video_id: &str) -> Option<f64> {
     let state = app.state::<AppState>();
-    let local = state.resume.load().get(video_id).copied();
+    let local = state.resume.load().remove(video_id);
     let remote = async {
         let key = state.auth_key().ok()?;
         let item = tokio::time::timeout(
@@ -467,6 +470,7 @@ async fn resume_position(app: &tauri::AppHandle, title_id: &str, video_id: &str)
                 .and_then(Value::as_str)
                 .and_then(progress::parse_iso_millis)
                 .unwrap_or(0),
+            source: None,
         })
     }
     .await;
@@ -488,6 +492,7 @@ async fn save_progress(app: tauri::AppHandle, report: player::WatchReport) {
             position,
             duration: report.duration,
             updated: progress::now_millis(),
+            source: report.source.clone(),
         },
     );
     let Ok(key) = state.auth_key() else {
@@ -584,6 +589,7 @@ async fn watched_set(
                     position: 0.0,
                     duration: 0.0,
                     updated: progress::now_millis(),
+                    source: None,
                 },
             );
         }

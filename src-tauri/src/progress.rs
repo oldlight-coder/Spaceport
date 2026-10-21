@@ -250,13 +250,16 @@ pub fn continue_watching(items: &[Value]) -> Vec<ContinueItem> {
 }
 
 /// One video's position as kept on this computer.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoProgress {
     pub position: f64,
     pub duration: f64,
     /// Milliseconds since 1970, to keep the newest when merging with Stremio's copy.
     pub updated: i64,
+    /// Key of the stream last played, so resuming starts on the same source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// Positions per video id ("tt0903747:1:2", or the title id for a movie), stored as JSON in the
@@ -441,6 +444,7 @@ mod tests {
             position,
             duration: 3000.0,
             updated: 1,
+            source: None,
         };
         store.update("tt1:1:1", p(100.0)).unwrap();
         store.update("tt1:1:2", p(200.0)).unwrap();

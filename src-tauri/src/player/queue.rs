@@ -21,6 +21,9 @@ pub struct Candidate {
     pub url: String,
     /// Short label shown when switching, e.g. "[TB+] Torrentio 4k".
     pub label: String,
+    /// Identifies the stream across visits, so a resumed video can start on the same source.
+    #[serde(default)]
+    pub key: Option<String>,
 }
 
 /// What the player should do after an event.
@@ -78,6 +81,10 @@ impl PlayQueue {
 
     pub fn current_label(&self) -> &str {
         &self.candidates[self.index].label
+    }
+
+    pub fn current_key(&self) -> Option<&str> {
+        self.candidates[self.index].key.as_deref()
     }
 
     pub fn labels(&self) -> Vec<String> {
@@ -175,6 +182,7 @@ mod tests {
             .map(|i| Candidate {
                 url: format!("https://debrid.example/{i}"),
                 label: format!("Stream {i}"),
+                key: Some(format!("key {i}")),
             })
             .collect()
     }
@@ -192,6 +200,15 @@ mod tests {
         fn new_at(candidates: Vec<Candidate>, now: Instant) -> Option<(Self, Action)> {
             Self::new(candidates, now, None)
         }
+    }
+
+    #[test]
+    fn current_key_follows_fallbacks() {
+        let now = Instant::now();
+        let (mut q, _) = PlayQueue::new(candidates(3), now, None).unwrap();
+        assert_eq!(q.current_key(), Some("key 1"));
+        q.on_failed("dead link", now);
+        assert_eq!(q.current_key(), Some("key 2"));
     }
 
     #[test]

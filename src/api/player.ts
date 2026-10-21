@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { RankedStream } from "./streams";
+import { RankedStream, Stream, StreamResults } from "./streams";
 
 export type PlayerEvent =
   | { kind: "loaded"; label: string }
@@ -12,6 +12,8 @@ export type PlayerEvent =
 /** A stream to try: a web link, or a torrent for the built-in engine. */
 export interface Candidate {
   label: string;
+  /** Identifies the stream across visits; see `streamKey`. */
+  key: string;
   url: string | null;
   torrent: { infoHash: string; fileIdx: number | null; sources: string[] } | null;
 }
@@ -30,12 +32,34 @@ export function candidatesFrom(ranked: RankedStream[], first?: RankedStream): Ca
     .slice(0, MAX_CANDIDATES)
     .map((s) => ({
       label: (s.name ?? s.addonName).replace(/\s+/g, " "),
+      key: streamKey(s),
       url: s.url,
       torrent:
         !s.url && s.infoHash
           ? { infoHash: s.infoHash, fileIdx: s.fileIdx, sources: s.sources }
           : null,
     }));
+}
+
+/**
+ * A stable name for a stream, saved with the video's progress so resuming starts on the same
+ * source. Torrents are named by their hash and file; links by addon and file name. Never the
+ * URL itself: debrid links carry the user's API key.
+ */
+export function streamKey(s: Stream): string {
+  if (s.infoHash) return `bt:${s.infoHash.toLowerCase()}:${s.fileIdx ?? ""}`;
+  const file = s.filename ?? `${s.name ?? ""} ${s.title ?? ""}`.replace(/\s+/g, " ").trim();
+  return `${s.addonName}|${file}`;
+}
+
+/** Moves the stream saved as `key` to the front, looking in the filtered-out streams too
+ * because the user may have picked one of those. Otherwise the order stays. */
+export function preferSaved(results: StreamResults, key: string | null | undefined) {
+  if (!key) return results.streams;
+  const saved =
+    results.streams.find((s) => streamKey(s) === key) ??
+    results.hidden.find((s) => streamKey(s) === key);
+  return saved ? [saved, ...results.streams.filter((s) => s !== saved)] : results.streams;
 }
 
 /** The title being played, for saving progress to the Stremio library. */

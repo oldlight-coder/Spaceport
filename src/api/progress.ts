@@ -5,6 +5,8 @@ export interface VideoProgress {
   position: number;
   duration: number;
   updated: number;
+  /** Key of the stream last played (`streamKey`), to resume on the same source. */
+  source?: string | null;
 }
 
 export interface ContinueItem {

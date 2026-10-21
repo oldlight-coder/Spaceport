@@ -732,7 +732,7 @@ fn spawn_event_thread(
                 Event::FileLoaded => {
                     q.on_loaded();
                     if let Some(w) = watch.lock().unwrap().as_mut() {
-                        w.on_loaded();
+                        w.on_loaded(q.current_key().map(String::from));
                     }
                     let label = q.current_label().to_string();
                     let index = q.index();
