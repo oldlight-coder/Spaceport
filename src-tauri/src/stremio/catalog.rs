@@ -254,7 +254,7 @@ pub fn resource_url(
 /// Reads the `metas` list of a catalog response, skipping entries without an id.
 pub fn parse_metas(body: &Value) -> Vec<MetaPreview> {
     let metas = body.get("metas").and_then(Value::as_array);
-    metas
+    let previews: Vec<MetaPreview> = metas
         .into_iter()
         .flatten()
         .filter_map(|m| {
@@ -274,13 +274,40 @@ pub fn parse_metas(body: &Value) -> Vec<MetaPreview> {
                 id,
             })
         })
-        .collect()
+        .collect();
+    if is_error_placeholder(&previews) {
+        return Vec::new();
+    }
+    previews
+}
+
+/// Some addons (TMDB's, for one) answer a failed catalog with a single made-up title such as
+/// "Error Loading Content" instead of an error. Such a catalog has nothing to show.
+fn is_error_placeholder(previews: &[MetaPreview]) -> bool {
+    match previews {
+        [only] => only.name.to_lowercase().starts_with("error"),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn drops_an_addons_error_placeholder() {
+        let failed = json!({"metas": [
+            {"id": "tmdb:0", "type": "series", "name": "Error Loading Content", "poster": "https://p/x.png"}
+        ]});
+        assert!(parse_metas(&failed).is_empty());
+        // A real title that starts with "Error" stays when the catalog has more.
+        let real = json!({"metas": [
+            {"id": "tt1", "type": "movie", "name": "Error"},
+            {"id": "tt2", "type": "movie", "name": "Heat"}
+        ]});
+        assert_eq!(parse_metas(&real).len(), 2);
+    }
 
     fn collection() -> Vec<Value> {
         vec![

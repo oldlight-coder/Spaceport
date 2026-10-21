@@ -268,3 +268,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
   Pill buttons, filled cards, tonal chips and tabs, hover/press state layers, thin themed
   scrollbars, smooth scrolling (off with reduced motion), shimmer skeletons on every loading
   screen and a spinner at start-up.
+- 2026-10-21: Catalogs that answer with a single "Error…" placeholder title (TMDB addon on failure) are treated as empty, so their rows no longer show an X card.
