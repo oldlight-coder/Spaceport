@@ -78,13 +78,26 @@ export interface TitleInfo {
  * `item` and `videoId` identify what plays: for progress, resume and addon subtitles. `nextUp`
  * labels the next episode for the countdown near the end.
  */
-export const openPlayer = (
+export const openPlayer = async (
   candidates: Candidate[],
   title: string,
   item: TitleInfo,
   videoId: string,
   nextUp: string | null,
-) => invoke<void>("player_open", { candidates, title, item, videoId, nextUp });
+) => {
+  // The video window stays see-through until the first frame, so the page behind it is
+  // blurred for as long as a video is open (see usePlayerBackdrop).
+  document.body.classList.add(PLAYER_OPEN_CLASS);
+  try {
+    await invoke<void>("player_open", { candidates, title, item, videoId, nextUp });
+  } catch (e) {
+    document.body.classList.remove(PLAYER_OPEN_CLASS);
+    throw e;
+  }
+};
+
+/** Set on the page's body while a video is open. */
+export const PLAYER_OPEN_CLASS = "player-open";
 
 /** A key pressed in the main window while a video plays, forwarded to the player controls. */
 export const PLAYER_KEY_EVENT = "player-key";

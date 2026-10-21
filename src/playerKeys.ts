@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { emitTo } from "@tauri-apps/api/event";
-import { onPlayerEvent, PLAYER_KEY_EVENT } from "./api/player";
+import { onPlayerEvent, PLAYER_KEY_EVENT, PLAYER_OPEN_CLASS } from "./api/player";
 
 /** The player controls window's label (`CONTROLS_WINDOW` in the backend). */
 const CONTROLS_WINDOW = "player-controls";
@@ -26,6 +26,20 @@ export function useForwardPlayerKeys() {
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
+      unlisten.then((stop) => stop());
+    };
+  }, []);
+}
+
+/** Takes the blur off the page once the player has closed or given up. */
+export function usePlayerBackdrop() {
+  useEffect(() => {
+    const unlisten = onPlayerEvent((event) => {
+      if (event.kind === "closed" || event.kind === "failed") {
+        document.body.classList.remove(PLAYER_OPEN_CLASS);
+      }
+    });
+    return () => {
       unlisten.then((stop) => stop());
     };
   }, []);

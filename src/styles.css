@@ -1514,3 +1514,22 @@ button.search-suggestion {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
+
+/* While a video is open the page sits behind it: blurred and dimmed, so nothing shows through
+   before the first frame is drawn (or while a stream is switched). */
+.app {
+  transition:
+    filter 0.25s var(--ease),
+    opacity 0.25s var(--ease);
+}
+
+body.player-open {
+  overflow: hidden;
+  background: #000;
+}
+
+body.player-open .app {
+  filter: blur(28px) brightness(0.45) saturate(0.8);
+  pointer-events: none;
+  user-select: none;
+}

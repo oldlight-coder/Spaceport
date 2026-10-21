@@ -5,7 +5,7 @@ import Avatar from "../components/Avatar";
 import SearchBox from "../components/SearchBox";
 import { OpenAddonsContext, OpenTitleContext, TitleRef } from "../navigation";
 import { useOnline } from "../online";
-import { useForwardPlayerKeys } from "../playerKeys";
+import { useForwardPlayerKeys, usePlayerBackdrop } from "../playerKeys";
 import { applyTheme, cacheAppearance } from "../theme";
 import { NewEpisodesContext, useNewEpisodesLoader } from "../newEpisodes";
 import BoardScreen from "./BoardScreen";
@@ -39,6 +39,7 @@ export default function HomeScreen({ user, onSession }: Props) {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const online = useOnline();
   useForwardPlayerKeys();
+  usePlayerBackdrop();
   const newEpisodes = useNewEpisodesLoader();
 
   // The look follows the saved settings and is remembered for the next start's first paint.
