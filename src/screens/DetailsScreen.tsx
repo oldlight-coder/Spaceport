@@ -1,0 +1,521 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { Episode, getMeta, MetaDetails } from "../api/meta";
+import {
+  candidatesFrom,
+  onPlayerEvent,
+  openPlayer,
+  PLAY_NEXT_EVENT,
+  preferBingeGroup,
+  preferSaved,
+} from "../api/player";
+import { episodeHeading, nextEpisode } from "../episodes";
+import { titleProgress, VideoProgress, watchedShare } from "../api/progress";
+import { getWatched, setWatched, WatchedMarks } from "../api/watched";
+import { TitleInfo } from "../api/player";
+import { formatTime } from "../format";
+import { setWatching, useWatching } from "../watching";
+import BookmarkIcon from "../components/BookmarkIcon";
+import { refreshNewEpisodes, useNewEpisodes } from "../newEpisodes";
+import { fetchStreams, noStreamsReason, RankedStream } from "../api/streams";
+import { useLoad } from "../components/Loadable";
+import StreamsPanel from "../components/StreamsPanel";
+import { TitleRef } from "../navigation";
+import { DetailsSkeleton } from "../components/Skeleton";
+
+interface Props {
+  title: TitleRef;
+  onBack: () => void;
+}
+
+export default function DetailsScreen({ title, onBack }: Props) {
+  const load = useCallback(() => getMeta(title.type, title.id, title.source), [title]);
+  const [meta, reload] = useLoad(load);
+
+  return (
+    <div className="details">
+      <button className="secondary back" onClick={onBack}>
+        ← Back
+      </button>
+      {meta.status === "loading" && <DetailsSkeleton />}
+      {meta.status === "error" && (
+        <div className="inline-error">
+          <p className="error">{meta.message}</p>
+          <button className="secondary" onClick={reload}>
+            Retry
+          </button>
+        </div>
+      )}
+      {meta.status === "ready" && <Details meta={meta.data} />}
+    </div>
+  );
+}
+
+/** The video whose streams are shown in the side panel. */
+interface StreamTarget {
+  videoId: string;
+  heading: string;
+}
+
+/** Saved positions by video id; refreshed whenever the player closes. */
+function useTitleProgress(id: string) {
+  const [progress, setProgress] = useState<Record<string, VideoProgress>>({});
+  const load = useCallback(() => {
+    titleProgress(id)
+      .then(setProgress)
+      .catch(() => {});
+  }, [id]);
+  useEffect(() => {
+    load();
+    const unlisten = onPlayerEvent((event) => {
+      // The last position is saved as the player closes; read it a moment later.
+      if (event.kind === "closed") window.setTimeout(load, 1000);
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+  }, [load]);
+  return [progress, load] as const;
+}
+
+/** Watched marks from the Stremio library; refreshed whenever the player closes. */
+function useWatched(item: TitleInfo) {
+  const [marks, setMarks] = useState<WatchedMarks>({ title: false, videos: [] });
+  const [busy, setBusy] = useState(false);
+  // Reads and marks are numbered; only the newest one's answer is shown.
+  const latest = useRef(0);
+  useEffect(() => {
+    const load = () => {
+      const ticket = ++latest.current;
+      getWatched(item)
+        .then((m) => ticket === latest.current && setMarks(m))
+        .catch(() => {});
+    };
+    load();
+    const unlisten = onPlayerEvent((event) => {
+      if (event.kind === "closed") window.setTimeout(load, 1500);
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+    // The item object is rebuilt on every render; its id is what identifies it.
+  }, [item.id]);
+
+  async function mark(videos: string[], watched: boolean) {
+    setBusy(true);
+    const ticket = ++latest.current;
+    try {
+      const saved = await setWatched(item, videos, watched);
+      if (ticket === latest.current) setMarks(saved);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return { marks, mark, busy };
+}
+
+function Details({ meta }: { meta: MetaDetails }) {
+  const [target, setTarget] = useState<StreamTarget | null>(null);
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const [progress, reloadProgress] = useTitleProgress(meta.id);
+  const item: TitleInfo = {
+    id: meta.id,
+    type: meta.type,
+    name: meta.name,
+    poster: meta.poster,
+    videoIds: meta.videoIds,
+    genres: meta.genres,
+  };
+  const watched = useWatched(item);
+  const watchingList = useWatching();
+  const newHere = useNewEpisodes()[meta.id] ?? [];
+  const watchedSet = new Set(watched.marks.videos);
+  const allWatched =
+    watched.marks.title ||
+    (meta.videoIds.length > 0 && meta.videoIds.every((id) => watchedSet.has(id)));
+  // Marking watched also clears saved positions, so progress is read again afterwards.
+  const markWatched = (videos: string[], value: boolean) =>
+    watched
+      .mark(videos, value)
+      .then(() => {
+        reloadProgress();
+        refreshNewEpisodes();
+      })
+      .catch((e) => setNotice({ text: String(e), error: true }));
+
+  useEffect(() => {
+    const unlisten = onPlayerEvent((event) => {
+      if (event.kind === "failed") {
+        setNotice({ text: `Playback failed: ${event.message}`, error: true });
+      }
+      // A started or closed player makes "Starting…" stale; errors stay until dismissed.
+      if (event.kind === "loaded" || event.kind === "closed") {
+        setNotice((current) => (current?.error ? current : null));
+      }
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+  }, []);
+
+  const fullTitle = (heading: string) =>
+    heading === meta.name ? meta.name : `${meta.name} · ${heading}`;
+
+  /** Plays `first` (or the best stream) and lets the player fall back down the ranked list. */
+  const episodeTarget = (ep: Episode): StreamTarget => ({
+    videoId: ep.id,
+    heading: episodeHeading(ep),
+  });
+
+  // What is playing, for starting the next episode when the player's countdown ends: the
+  // handler below is registered once, so it reads the latest values from here.
+  const playing = useRef<{ videoId: string; bingeGroup: string | null } | null>(null);
+
+  // Each Play gets a number; an older request that finishes later must not start the player
+  // over a newer one (two quick clicks, or a stream picked while auto-play still searched).
+  const playRequest = useRef(0);
+
+  async function play(
+    target: StreamTarget,
+    ranked: RankedStream[],
+    first?: RankedStream,
+    request = ++playRequest.current,
+  ) {
+    if (request !== playRequest.current) return;
+    const candidates = candidatesFrom(ranked, first);
+    if (candidates.length === 0) {
+      setNotice({ text: "No playable stream was found.", error: true });
+      return;
+    }
+    const next = nextEpisode(meta, target.videoId);
+    const chosen = first ?? ranked.find((s) => s.url || s.infoHash);
+    playing.current = { videoId: target.videoId, bingeGroup: chosen?.bingeGroup ?? null };
+    setNotice({ text: `Starting ${candidates[0].label}…` });
+    try {
+      await openPlayer(
+        candidates,
+        fullTitle(target.heading),
+        item,
+        target.videoId,
+        next ? episodeHeading(next) : null,
+      );
+    } catch (e) {
+      setNotice({ text: String(e), error: true });
+    }
+  }
+
+  /** Auto-play: rank the streams and start the best one without showing the picker. When
+   * continuing a series, streams like the one just watched (`bingeGroup`) go first. */
+  async function autoPlay(target: StreamTarget, bingeGroup: string | null = null) {
+    const request = ++playRequest.current;
+    setNotice({ text: `Finding the best stream for ${target.heading}…` });
+    try {
+      const [results, saved] = await Promise.all([
+        fetchStreams(meta.type, target.videoId),
+        titleProgress(meta.id)
+          .then((all) => all[target.videoId])
+          .catch(() => undefined),
+      ]);
+      if (request !== playRequest.current) return;
+      // A video stopped part way resumes on the stream it was playing.
+      const resumeSource = saved && saved.position > 0 ? saved.source : null;
+      const ranked = preferSaved(results, resumeSource);
+      if (ranked.length === 0) {
+        // The picker shows the same reason next to each addon's outcome and hidden streams.
+        setNotice({ text: noStreamsReason(results) ?? "No stream found.", error: true });
+        setTarget(target);
+        return;
+      }
+      await play(target, resumeSource ? ranked : preferBingeGroup(ranked, bingeGroup), undefined, request);
+    } catch (e) {
+      if (request === playRequest.current) setNotice({ text: String(e), error: true });
+    }
+  }
+
+  const autoPlayRef = useRef(autoPlay);
+  autoPlayRef.current = autoPlay;
+  useEffect(() => {
+    const unlisten = listen(PLAY_NEXT_EVENT, () => {
+      const current = playing.current;
+      const next = current && nextEpisode(meta, current.videoId);
+      if (current && next) autoPlayRef.current(episodeTarget(next), current.bingeGroup);
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+    // Registered once per title; `meta` only changes with the title.
+  }, [meta]);
+
+  const episodeActions: EpisodeActions = {
+    play: (ep) => autoPlay(episodeTarget(ep)),
+    choose: (ep) => setTarget(episodeTarget(ep)),
+    isWatched: (ep) => watchedSet.has(ep.id),
+    isNew: (ep) => newHere.includes(ep.id),
+    setWatched: (ids, value) => markWatched(ids, value),
+    busy: watched.busy,
+  };
+  const isWatching = watchingList.some((i) => i.id === meta.id);
+  const movieTarget = { videoId: meta.id, heading: meta.name };
+  const facts = [meta.releaseInfo, meta.runtime, meta.imdbRating && `IMDb ${meta.imdbRating}`].filter(
+    Boolean,
+  );
+  return (
+    <>
+      <header className="details-hero">
+        {meta.background && (
+          <img className="backdrop" src={meta.background} alt="" referrerPolicy="no-referrer" />
+        )}
+        <div className="details-head">
+          {meta.poster && (
+            <img className="details-poster" src={meta.poster} alt="" referrerPolicy="no-referrer" />
+          )}
+          <div className="details-text">
+            {meta.logo ? (
+              <img className="details-logo" src={meta.logo} alt={meta.name} referrerPolicy="no-referrer" />
+            ) : (
+              <h1>{meta.name}</h1>
+            )}
+            {facts.length > 0 && <p className="muted">{facts.join(" · ")}</p>}
+            {meta.genres.length > 0 && (
+              <ul className="chips">
+                {meta.genres.map((g) => (
+                  <li key={g}>{g}</li>
+                ))}
+              </ul>
+            )}
+            {meta.description && <p className="description">{meta.description}</p>}
+            <div className="row-actions">
+              <button
+                className={isWatching ? "secondary watching-toggle on" : "secondary watching-toggle"}
+                onClick={() =>
+                  setWatching(
+                    { id: meta.id, type: meta.type, name: meta.name, poster: meta.poster },
+                    !isWatching,
+                  )
+                }
+                title="Keeps this title under Library > Watching"
+              >
+                <BookmarkIcon filled={isWatching} />
+                {isWatching ? "Watching" : "Mark as watching"}
+              </button>
+              <button
+                className={allWatched ? "secondary watched-toggle on" : "secondary watched-toggle"}
+                onClick={() => markWatched([], !allWatched)}
+                disabled={watched.busy}
+              >
+                {allWatched ? "✓ Watched" : "Mark as watched"}
+              </button>
+            </div>
+            {meta.seasons.length === 0 && meta.videos.length === 0 && (
+              <div className="row-actions">
+                <button onClick={() => autoPlay(movieTarget)}>
+                  {progress[meta.id]?.position > 0
+                    ? `▶ Resume from ${formatTime(progress[meta.id].position)}`
+                    : "▶ Play"}
+                </button>
+                <button className="secondary" onClick={() => setTarget(movieTarget)}>
+                  Choose stream
+                </button>
+              </div>
+            )}
+            {meta.directors.length > 0 && (
+              <p>
+                <span className="muted">Director </span>
+                {meta.directors.join(", ")}
+              </p>
+            )}
+            {meta.cast.length > 0 && (
+              <p>
+                <span className="muted">Cast </span>
+                {meta.cast.join(", ")}
+              </p>
+            )}
+          </div>
+        </div>
+      </header>
+      {notice && (
+        <div className={notice.error ? "picked error-notice" : "picked"} role="status">
+          <span>{notice.text}</span>
+          <button className="secondary" onClick={() => setNotice(null)} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
+      {meta.seasons.length > 0 && <Seasons meta={meta} actions={episodeActions} progress={progress} />}
+      {meta.videos.length > 0 && (
+        <section>
+          <h2>Videos</h2>
+          <EpisodeList episodes={meta.videos} actions={episodeActions} progress={progress} />
+        </section>
+      )}
+      {target && (
+        <StreamsPanel
+          key={target.videoId}
+          type={meta.type}
+          videoId={target.videoId}
+          heading={target.heading}
+          onClose={() => setTarget(null)}
+          onPick={(stream, ranked) => {
+            setTarget(null);
+            play(target, ranked, stream);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+const seasonLabel = (n: number) => (n === 0 ? "Specials" : `Season ${n}`);
+
+// The last season opened per title is kept locally so returning to a title shows it again.
+const seasonKey = (id: string) => `spaceport.season.${id}`;
+
+function readSeason(id: string): number | null {
+  try {
+    const value = localStorage.getItem(seasonKey(id));
+    return value === null ? null : Number(value);
+  } catch {
+    return null;
+  }
+}
+
+function saveSeason(id: string, season: number) {
+  try {
+    localStorage.setItem(seasonKey(id), String(season));
+  } catch {
+    // Storage can be unavailable; the choice then only lasts for this view.
+  }
+}
+
+/** What clicking an episode does: play it, or open the picker for it. */
+interface EpisodeActions {
+  play: (ep: Episode) => void;
+  choose: (ep: Episode) => void;
+  isWatched: (ep: Episode) => boolean;
+  isNew: (ep: Episode) => boolean;
+  setWatched: (ids: string[], watched: boolean) => void;
+  busy: boolean;
+}
+
+interface SeasonsProps {
+  meta: MetaDetails;
+  actions: EpisodeActions;
+  progress: Record<string, VideoProgress>;
+}
+
+function Seasons({ meta, actions, progress }: SeasonsProps) {
+  const [selected, setSelected] = useState(() => readSeason(meta.id) ?? meta.seasons[0].number);
+  const season = meta.seasons.find((s) => s.number === selected) ?? meta.seasons[0];
+
+  function select(number: number) {
+    setSelected(number);
+    saveSeason(meta.id, number);
+  }
+  return (
+    <section>
+      <div className="season-head">
+        <h2>Episodes</h2>
+        <select
+          value={season.number}
+          onChange={(e) => select(Number(e.target.value))}
+          aria-label="Season"
+        >
+          {meta.seasons.map((s) => (
+            <option key={s.number} value={s.number}>
+              {seasonLabel(s.number)} ({s.episodes.length})
+            </option>
+          ))}
+        </select>
+        <SeasonWatchedButton episodes={season.episodes} actions={actions} />
+      </div>
+      <EpisodeList episodes={season.episodes} actions={actions} progress={progress} />
+    </section>
+  );
+}
+
+function formatDate(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+}
+
+interface EpisodeListProps {
+  episodes: Episode[];
+  actions: EpisodeActions;
+  progress: Record<string, VideoProgress>;
+}
+
+function EpisodeList({ episodes, actions, progress }: EpisodeListProps) {
+  return (
+    <ol className="episodes">
+      {episodes.map((ep) => (
+        <li key={ep.id} className="episode-row">
+          <button className="episode" onClick={() => actions.play(ep)} title="Play">
+            {ep.thumbnail ? (
+              <img src={ep.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="episode-thumb" />
+            )}
+            <div>
+              <strong>
+                {ep.episode != null && `${ep.episode}. `}
+                {ep.title}
+              </strong>
+              {ep.released && <span className="muted"> · {formatDate(ep.released)}</span>}
+              {actions.isNew(ep) && <span className="new-tag">New</span>}
+              {ep.overview && <p className="muted">{ep.overview}</p>}
+              <EpisodeProgress progress={progress[ep.id]} />
+            </div>
+          </button>
+          <button
+            className={
+              actions.isWatched(ep) ? "secondary episode-mark on" : "secondary episode-mark"
+            }
+            onClick={() => actions.setWatched([ep.id], !actions.isWatched(ep))}
+            disabled={actions.busy}
+            aria-label={
+              actions.isWatched(ep) ? `Mark ${ep.title} unwatched` : `Mark ${ep.title} watched`
+            }
+            title={actions.isWatched(ep) ? "Watched (click to undo)" : "Mark watched"}
+          >
+            {actions.isWatched(ep) ? "✓" : "○"}
+          </button>
+          <button
+            className="secondary choose-stream"
+            onClick={() => actions.choose(ep)}
+            aria-label={`Choose a stream for ${ep.title}`}
+            title="Choose stream"
+          >
+            ⋯
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function EpisodeProgress({ progress }: { progress?: VideoProgress }) {
+  const share = watchedShare(progress);
+  if (share == null || !progress) return null;
+  return (
+    <>
+      <span className="progress-bar" aria-label={`${Math.round(share * 100)}% watched`}>
+        <span style={{ width: `${share * 100}%` }} />
+      </span>
+      <span className="muted small">Resume from {formatTime(progress.position)}</span>
+    </>
+  );
+}
+
+function SeasonWatchedButton({ episodes, actions }: { episodes: Episode[]; actions: EpisodeActions }) {
+  const all = episodes.length > 0 && episodes.every((ep) => actions.isWatched(ep));
+  return (
+    <button
+      className="secondary season-mark"
+      onClick={() => actions.setWatched(episodes.map((ep) => ep.id), !all)}
+      disabled={actions.busy}
+    >
+      {all ? "Mark season unwatched" : "Mark season watched"}
+    </button>
+  );
+}
