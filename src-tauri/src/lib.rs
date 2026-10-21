@@ -327,6 +327,7 @@ async fn player_open(
     title: String,
     item: progress::TitleInfo,
     video_id: String,
+    next_up: Option<String>,
 ) -> Result<(), String> {
     let kind = item.kind.clone();
     let engine = app.state::<AppState>().torrents.clone();
@@ -365,9 +366,17 @@ async fn player_open(
     let handle = app.clone();
     app.run_on_main_thread(move || {
         let state = handle.state::<AppState>();
-        let result = state
-            .player
-            .open(&handle, candidates, &title, &prefs, target, start);
+        let result = state.player.open(
+            &handle,
+            candidates,
+            &prefs,
+            player::PlayRequest {
+                title,
+                target,
+                start,
+                next_up,
+            },
+        );
         let _ = sender.send(result);
     })
     .map_err(|e| e.to_string())?;

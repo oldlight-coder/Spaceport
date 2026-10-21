@@ -28,6 +28,8 @@ export interface PlaybackState {
   speed: number;
   seeking: boolean;
   subDelay: number;
+  /** The next episode's label, when there is one to count down to. */
+  nextUp: string | null;
   /** Where playback resumed, when it did not start at the beginning. */
   resumedFrom: number | null;
   subScale: number;

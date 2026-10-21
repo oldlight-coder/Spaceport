@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { onPlayerEvent } from "../api/player";
+import { emit } from "@tauri-apps/api/event";
+import { onPlayerEvent, PLAY_NEXT_EVENT } from "../api/player";
 import { formatTime } from "../format";
 import {
   control,
@@ -11,6 +12,10 @@ import {
 } from "../api/playerControls";
 
 const HIDE_AFTER_MS = 3000;
+/** The next-episode card appears this many seconds before the end... */
+const NEXT_UP_BEFORE_END = 30;
+/** ...and counts down from this many seconds. */
+const NEXT_UP_COUNTDOWN = 10;
 const SKIP_SECONDS = 10;
 const SUB_DELAY_STEP = 0.1;
 const SUB_SCALE_STEP = 0.1;
@@ -96,6 +101,86 @@ function Menu({
   );
 }
 
+/**
+ * Counts down to the next episode near the end of this one. Ending the countdown, pressing
+ * Play now, or the episode ending asks the main window to start the next episode; Cancel stops
+ * it for this episode.
+ */
+function useNextUp(state: PlaybackState | null) {
+  const [cancelled, setCancelled] = useState(false);
+  const [shownAt, setShownAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+  // The next episode was asked for; the card stays away until the next video starts.
+  const [requested, setRequested] = useState(false);
+  const title = state?.title;
+
+  // A new video starts with a fresh countdown.
+  useEffect(() => {
+    setCancelled(false);
+    setShownAt(null);
+    setRequested(false);
+  }, [title]);
+
+  const remaining = state ? state.duration - state.position : Infinity;
+  const active =
+    !!state?.nextUp &&
+    !!state.stream &&
+    state.duration > 60 &&
+    remaining <= NEXT_UP_BEFORE_END &&
+    !cancelled &&
+    !requested;
+
+  useEffect(() => {
+    if (active && shownAt == null) {
+      const start = Date.now();
+      setShownAt(start);
+      setNow(start);
+    }
+    if (!active) setShownAt(null);
+  }, [active, shownAt]);
+
+  useEffect(() => {
+    if (shownAt == null) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [shownAt]);
+
+  const playNext = useCallback(() => {
+    if (requested) return;
+    setRequested(true);
+    setShownAt(null);
+    emit(PLAY_NEXT_EVENT).catch(() => {});
+  }, [requested]);
+
+  const elapsed = shownAt == null ? 0 : Math.max(0, now - shownAt);
+  const secondsLeft =
+    shownAt == null ? null : Math.max(0, NEXT_UP_COUNTDOWN - Math.floor(elapsed / 1000));
+
+  useEffect(() => {
+    if (secondsLeft === 0) playNext();
+  }, [secondsLeft, playNext]);
+
+  // The episode ended before the countdown did.
+  useEffect(() => {
+    const stop = onPlayerEvent((event) => {
+      if (event.kind === "ended" && state?.nextUp && !cancelled) playNext();
+    });
+    return () => {
+      stop.then((unlisten) => unlisten());
+    };
+  }, [state?.nextUp, cancelled, playNext]);
+
+  return {
+    label: state?.nextUp ?? null,
+    secondsLeft,
+    playNext,
+    cancel: () => {
+      setCancelled(true);
+      setShownAt(null);
+    },
+  };
+}
+
 /** The player controls, drawn in a transparent window over the video. */
 export default function Controls() {
   const [state, setState] = useState<PlaybackState | null>(null);
@@ -167,6 +252,7 @@ export default function Controls() {
   );
 
   const paused = state?.paused ?? false;
+  const nextUp = useNextUp(state);
 
   // Show the controls on any activity; hide them again while playing.
   const wake = useCallback(() => {
@@ -310,6 +396,20 @@ export default function Controls() {
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {nextUp.secondsLeft != null && nextUp.label && (
+        <div className="next-up" role="status">
+          <div className="next-up-label">
+            <span className="muted">Next episode in {nextUp.secondsLeft}</span>
+            <strong>{nextUp.label}</strong>
+          </div>
+          <div className="next-up-actions">
+            <button className="primary" onClick={nextUp.playNext}>
+              ▶ Play now
+            </button>
+            <button onClick={nextUp.cancel}>Cancel</button>
+          </div>
+        </div>
+      )}
       {resumeNotice != null && !toast && (
         <div className="toast resume-toast">
           Resumed at {formatTime(resumeNotice)}

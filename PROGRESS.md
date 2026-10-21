@@ -44,7 +44,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 ## M6. Subtitles, resume and progress
 - [x] Subtitles from addons, embedded tracks and local files; delay and style controls
 - [x] Resume position per episode; Continue Watching row
-- [ ] Mark watched / unwatched; progress synced back to Stremio
+- [x] Mark watched / unwatched; progress synced back to Stremio
 - [ ] Next-episode countdown
 - **Acceptance:** stopping halfway and reopening resumes at the same spot; the same progress shows
   in the official Stremio app.
@@ -180,3 +180,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   and whole titles can be marked watched/unwatched; stored in the library item like Stremio
   (flaggedWatched, and state.watched as anchor:length:base64(zlib(bits)) in the addon's video
   order, shifted by the anchor when videos change). Videos played to 90% are marked automatically.
+- 2026-10-21: M6 watched marks confirmed by owner, matching the official app. (3449b4d)
+- 2026-10-21: M6 next-episode countdown implemented (not yet ticked: needs a Windows check). 30 s
+  before the end a card counts down from 10 (Play now / Cancel); the next episode in season order
+  (specials only to specials) starts in the same player, preferring the same bingeGroup. M6 code
+  complete.

@@ -151,6 +151,16 @@ struct Session {
     watch: SharedWatch,
 }
 
+/// What to play: the window title, the video, where to start and what comes next.
+pub struct PlayRequest {
+    pub title: String,
+    pub target: WatchTarget,
+    /// Seconds to resume from.
+    pub start: Option<f64>,
+    /// The next episode's label, for the countdown near the end.
+    pub next_up: Option<String>,
+}
+
 /// The user's preferences the player starts with.
 pub struct PlayerPrefs {
     /// mpv's `alang` list for picking the dub.
@@ -249,11 +259,16 @@ impl Player {
         &self,
         app: &AppHandle,
         candidates: Vec<Candidate>,
-        title: &str,
         prefs: &PlayerPrefs,
-        target: WatchTarget,
-        start: Option<f64>,
+        request: PlayRequest,
     ) -> Result<(), String> {
+        let PlayRequest {
+            title,
+            target,
+            start,
+            next_up,
+        } = request;
+        let title = title.as_str();
         let now = Instant::now();
         let (queue, first) =
             PlayQueue::new(candidates, now, start).ok_or("there is no stream to play")?;
@@ -269,6 +284,7 @@ impl Player {
                 state.sources = queue.labels();
                 state.source_index = 0;
                 state.resumed_from = start;
+                state.next_up = next_up;
                 state.set_addon_subtitles(Vec::new());
             }
             existing.mpv.set_property("force-media-title", title)?;
@@ -309,6 +325,7 @@ impl Player {
                 .map(PlayQueue::labels)
                 .unwrap_or_default(),
             resumed_from: start,
+            next_up,
             ..PlaybackState::default()
         }));
         let watch: SharedWatch = Arc::new(Mutex::new(Some(WatchTracker::new(target, now))));

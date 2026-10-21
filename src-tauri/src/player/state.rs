@@ -60,6 +60,8 @@ pub struct PlaybackState {
     pub sub_delay: f64,
     /// Subtitle size relative to the default.
     pub sub_scale: f64,
+    /// The next episode's label ("S1 E3 · Title"), when there is one to count down to.
+    pub next_up: Option<String>,
     /// The position playback resumed from, if it did not start at the beginning.
     pub resumed_from: Option<f64>,
     /// Labels of the streams that can be switched to, best first.

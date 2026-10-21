@@ -48,13 +48,30 @@ export interface TitleInfo {
   videoIds: string[];
 }
 
-/** `item` and `videoId` identify what plays: for progress, resume and addon subtitles. */
+/**
+ * `item` and `videoId` identify what plays: for progress, resume and addon subtitles. `nextUp`
+ * labels the next episode for the countdown near the end.
+ */
 export const openPlayer = (
   candidates: Candidate[],
   title: string,
   item: TitleInfo,
   videoId: string,
-) => invoke<void>("player_open", { candidates, title, item, videoId });
+  nextUp: string | null,
+) => invoke<void>("player_open", { candidates, title, item, videoId, nextUp });
+
+/** Sent by the player's countdown when the next episode should start. */
+export const PLAY_NEXT_EVENT = "player-play-next";
+
+/**
+ * Streams of the next episode with the same `bingeGroup` as the one just watched (same addon,
+ * release and quality) move to the front, keeping the ranking otherwise.
+ */
+export function preferBingeGroup(ranked: RankedStream[], bingeGroup: string | null) {
+  if (!bingeGroup) return ranked;
+  const same = ranked.filter((s) => s.bingeGroup === bingeGroup);
+  return [...same, ...ranked.filter((s) => s.bingeGroup !== bingeGroup)];
+}
 
 export const closePlayer = () => invoke<void>("player_close");
 

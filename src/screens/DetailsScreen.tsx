@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Episode, getMeta, MetaDetails } from "../api/meta";
-import { candidatesFrom, onPlayerEvent, openPlayer } from "../api/player";
+import {
+  candidatesFrom,
+  onPlayerEvent,
+  openPlayer,
+  PLAY_NEXT_EVENT,
+  preferBingeGroup,
+} from "../api/player";
+import { episodeHeading, nextEpisode } from "../episodes";
 import { titleProgress, VideoProgress, watchedShare } from "../api/progress";
 import { getWatched, setWatched, WatchedMarks } from "../api/watched";
 import { TitleInfo } from "../api/player";
@@ -134,22 +142,41 @@ function Details({ meta }: { meta: MetaDetails }) {
     heading === meta.name ? meta.name : `${meta.name} · ${heading}`;
 
   /** Plays `first` (or the best stream) and lets the player fall back down the ranked list. */
+  const episodeTarget = (ep: Episode): StreamTarget => ({
+    videoId: ep.id,
+    heading: episodeHeading(ep),
+  });
+
+  // What is playing, for starting the next episode when the player's countdown ends: the
+  // handler below is registered once, so it reads the latest values from here.
+  const playing = useRef<{ videoId: string; bingeGroup: string | null } | null>(null);
+
   async function play(target: StreamTarget, ranked: RankedStream[], first?: RankedStream) {
     const candidates = candidatesFrom(ranked, first);
     if (candidates.length === 0) {
       setNotice({ text: "No playable stream was found.", error: true });
       return;
     }
+    const next = nextEpisode(meta, target.videoId);
+    const chosen = first ?? ranked.find((s) => s.url || s.infoHash);
+    playing.current = { videoId: target.videoId, bingeGroup: chosen?.bingeGroup ?? null };
     setNotice({ text: `Starting ${candidates[0].label}…` });
     try {
-      await openPlayer(candidates, fullTitle(target.heading), item, target.videoId);
+      await openPlayer(
+        candidates,
+        fullTitle(target.heading),
+        item,
+        target.videoId,
+        next ? episodeHeading(next) : null,
+      );
     } catch (e) {
       setNotice({ text: String(e), error: true });
     }
   }
 
-  /** Auto-play: rank the streams and start the best one without showing the picker. */
-  async function autoPlay(target: StreamTarget) {
+  /** Auto-play: rank the streams and start the best one without showing the picker. When
+   * continuing a series, streams like the one just watched (`bingeGroup`) go first. */
+  async function autoPlay(target: StreamTarget, bingeGroup: string | null = null) {
     setNotice({ text: `Finding the best stream for ${target.heading}…` });
     try {
       const results = await fetchStreams(meta.type, target.videoId);
@@ -158,19 +185,26 @@ function Details({ meta }: { meta: MetaDetails }) {
         setTarget(target);
         return;
       }
-      await play(target, results.streams);
+      await play(target, preferBingeGroup(results.streams, bingeGroup));
     } catch (e) {
       setNotice({ text: String(e), error: true });
     }
   }
 
-  const episodeTarget = (ep: Episode): StreamTarget => ({
-    videoId: ep.id,
-    heading:
-      ep.season != null && ep.episode != null
-        ? `S${ep.season} E${ep.episode} · ${ep.title}`
-        : ep.title,
-  });
+  const autoPlayRef = useRef(autoPlay);
+  autoPlayRef.current = autoPlay;
+  useEffect(() => {
+    const unlisten = listen(PLAY_NEXT_EVENT, () => {
+      const current = playing.current;
+      const next = current && nextEpisode(meta, current.videoId);
+      if (current && next) autoPlayRef.current(episodeTarget(next), current.bingeGroup);
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+    // Registered once per title; `meta` only changes with the title.
+  }, [meta]);
+
   const episodeActions: EpisodeActions = {
     play: (ep) => autoPlay(episodeTarget(ep)),
     choose: (ep) => setTarget(episodeTarget(ep)),

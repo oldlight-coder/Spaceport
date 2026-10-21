@@ -276,3 +276,40 @@ select option {
 .resume-toast button {
   padding: 6px 12px;
 }
+
+.next-up {
+  position: absolute;
+  right: 24px;
+  bottom: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 280px;
+  max-width: 420px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(20, 22, 30, 0.92);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+.next-up-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.next-up-label .muted {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.next-up-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.next-up-actions .primary {
+  background: var(--accent);
+  color: #0f1115;
+  font-weight: 600;
+}
