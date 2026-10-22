@@ -385,3 +385,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   subtitles, resume, progress, next episode, AniSkip; back button closes it, landscape without
   system bars), tap and double-tap controls; torrents "only on Wi-Fi" setting and a 2 GB default
   cache on Android. Untested on a device yet.
+- 2026-10-22: M15 device test: login, browsing, resume, audio and back button work; the video
+  did not show (sound only). Video view moved to a TextureView and the page canvas forced
+  transparent while playing.

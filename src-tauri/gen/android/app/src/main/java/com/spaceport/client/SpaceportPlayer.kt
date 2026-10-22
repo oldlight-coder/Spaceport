@@ -117,12 +117,11 @@ class SpaceportPlayer(private val activity: Activity) {
       .build()
     exo.addListener(listener)
     exo.playWhenReady = true
-    val playerView = PlayerView(activity).apply {
-      useController = false
+    val playerView = (
+      activity.layoutInflater.inflate(R.layout.spaceport_player_view, null) as PlayerView
+    ).apply {
       player = exo
       keepScreenOn = true
-      setShutterBackgroundColor(Color.BLACK)
-      setBackgroundColor(Color.BLACK)
     }
     val root = activity.findViewById<ViewGroup>(android.R.id.content)
     root.addView(
