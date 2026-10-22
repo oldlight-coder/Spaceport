@@ -116,6 +116,37 @@ impl Appearance {
     }
 }
 
+/// The user's arrangement of catalog rows (Home) and catalogs (Movies, Series, Anime). Each
+/// catalog is named "addonId/type/catalogId"; ones not listed keep the addons' order after the
+/// listed ones.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CatalogLayout {
+    pub order: Vec<String>,
+    pub hidden: Vec<String>,
+}
+
+impl CatalogLayout {
+    const MAX_ENTRIES: usize = 1000;
+    const MAX_KEY: usize = 400;
+
+    fn validate(&self) -> Result<(), String> {
+        let mut entries = self.order.iter().chain(&self.hidden);
+        if self.order.len() + self.hidden.len() > Self::MAX_ENTRIES
+            || entries
+                .clone()
+                .any(|k| k.is_empty() || k.len() > Self::MAX_KEY)
+        {
+            return Err("the row layout is too large".into());
+        }
+        // Catalog names never hold links; refuse anything that looks like one.
+        if entries.any(|k| k.contains("://")) {
+            return Err("the row layout must not contain links".into());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -140,6 +171,7 @@ pub struct Settings {
     /// Start the next episode when the countdown near the end runs out.
     pub auto_play_next: bool,
     pub appearance: Appearance,
+    pub catalog_layout: CatalogLayout,
 }
 
 impl Default for Settings {
@@ -156,6 +188,7 @@ impl Default for Settings {
             anime_auto_skip: false,
             auto_play_next: true,
             appearance: Appearance::default(),
+            catalog_layout: CatalogLayout::default(),
         }
     }
 }
@@ -194,6 +227,9 @@ impl Settings {
             .validate()
             .map_err(SettingsError::Invalid)?;
         self.appearance.validate().map_err(SettingsError::Invalid)?;
+        self.catalog_layout
+            .validate()
+            .map_err(SettingsError::Invalid)?;
         if !(1..=2000).contains(&self.torrent_cache_gb) {
             return Err(SettingsError::Invalid(
                 "the torrent cache must be between 1 and 2000 GB".into(),
@@ -253,6 +289,15 @@ mod tests {
             std::env::temp_dir().join(format!("spaceport-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn checks_the_row_layout() {
+        let mut settings = Settings::default();
+        settings.catalog_layout.order = vec!["com.linvo.cinemeta/movie/top".into()];
+        assert!(settings.validate().is_ok());
+        settings.catalog_layout.hidden = vec!["https://addon.example/key/manifest.json".into()];
+        assert!(settings.validate().is_err());
     }
 
     #[test]

@@ -760,6 +760,20 @@ async fn save_progress(app: tauri::AppHandle, report: player::WatchReport) {
     let _ = state.api.put_library_items(&key, &[item]).await;
 }
 
+/// Every title played, newest first, from the Stremio library datastore.
+#[tauri::command]
+async fn watch_history(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<progress::ContinueItem>, String> {
+    let key = state.auth_key()?;
+    let items = state
+        .api
+        .library_items(&key)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(progress::watch_history(&items))
+}
+
 /// Whether the title is in the user's Stremio library.
 #[tauri::command]
 async fn library_status(state: tauri::State<'_, AppState>, id: String) -> Result<bool, String> {
@@ -1114,6 +1128,7 @@ pub fn run() {
             continue_watching,
             continue_dismiss,
             library_status,
+            watch_history,
             library_set,
             new_episodes,
             search_assist,

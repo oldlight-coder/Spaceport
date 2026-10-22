@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CatalogLayoutContext } from "../catalogLayout";
 import { logout, Session, User } from "../api/auth";
-import { getSettings, saveSettings, Settings } from "../api/settings";
+import { CatalogLayout, getSettings, saveSettings, Settings } from "../api/settings";
 import Avatar from "../components/Avatar";
 import SearchBox from "../components/SearchBox";
 import { OpenAddonsContext, OpenTitleContext, TitleRef } from "../navigation";
@@ -60,6 +61,17 @@ export default function HomeScreen({ user, onSession }: Props) {
     setSettings(await saveSettings(next));
   }
 
+  // The row layout is saved into the newest settings, not a copy from an earlier render.
+  const latestSettings = useRef(settings);
+  latestSettings.current = settings;
+  const catalogLayout = {
+    layout: settings?.catalogLayout,
+    save: async (layout: CatalogLayout) => {
+      const current = latestSettings.current;
+      if (current) await updateSettings({ ...current, catalogLayout: layout });
+    },
+  };
+
   function go(next: Page) {
     setPage(next);
     setTitle(null);
@@ -99,6 +111,7 @@ export default function HomeScreen({ user, onSession }: Props) {
   return (
     <OpenTitleContext.Provider value={openTitle}>
       <OpenAddonsContext.Provider value={openAddons}>
+      <CatalogLayoutContext.Provider value={catalogLayout}>
         <NewEpisodesContext.Provider value={newEpisodes}>
           <div className="app">
             <header className="topbar">
@@ -166,6 +179,7 @@ export default function HomeScreen({ user, onSession }: Props) {
             </main>
           </div>
         </NewEpisodesContext.Provider>
+      </CatalogLayoutContext.Provider>
       </OpenAddonsContext.Provider>
     </OpenTitleContext.Provider>
   );

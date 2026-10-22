@@ -17,6 +17,12 @@ export interface SubtitleStyle {
   position: number;
 }
 
+/** Row order and hidden rows, each catalog named "addonId/type/catalogId". */
+export interface CatalogLayout {
+  order: string[];
+  hidden: string[];
+}
+
 export interface Settings {
   audioLanguages: string[];
   subtitleLanguages: string[];
@@ -31,6 +37,7 @@ export interface Settings {
   /** Start the next episode when the countdown runs out. */
   autoPlayNext: boolean;
   appearance: Appearance;
+  catalogLayout: CatalogLayout;
 }
 
 export const getSettings = () => invoke<Settings>("settings_get");

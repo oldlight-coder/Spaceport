@@ -22,6 +22,9 @@ export interface ContinueItem {
 
 export const continueWatching = () => invoke<ContinueItem[]>("continue_watching");
 
+/** Every title played, newest first (also ones no longer in the library). */
+export const watchHistory = () => invoke<ContinueItem[]>("watch_history");
+
 /** Takes titles off Continue Watching; they start from the beginning next time. */
 export const dismissContinue = (ids: string[]) => invoke<void>("continue_dismiss", { ids });
 

@@ -293,6 +293,57 @@ pub fn continue_watching(items: &[Value]) -> Vec<ContinueItem> {
     list
 }
 
+/// Most titles the watch history lists.
+const HISTORY_LIMIT: usize = 300;
+
+/// Every title the user has played (watch time recorded or marked watched), whether or not it
+/// is in the library, most recently watched first.
+pub fn watch_history(items: &[Value]) -> Vec<ContinueItem> {
+    let mut list: Vec<(i64, ContinueItem)> = items
+        .iter()
+        .filter_map(|item| {
+            let text = |key: &str| item.get(key).and_then(Value::as_str).map(str::to_string);
+            let state = item.get("state")?.as_object()?;
+            let kind = text("type").unwrap_or_default();
+            let last = state.get("lastWatched").and_then(Value::as_str)?;
+            let when = parse_iso_millis(last)?;
+            let played = [
+                "overallTimeWatched",
+                "timeWatched",
+                "timesWatched",
+                "flaggedWatched",
+            ]
+            .iter()
+            .any(|key| number(state, key) > 0.0);
+            if kind == "other" || !played {
+                return None;
+            }
+            let id = text("_id")?;
+            Some((
+                when,
+                ContinueItem {
+                    name: text("name").unwrap_or_else(|| id.clone()),
+                    poster: text("poster").filter(|p| !p.trim().is_empty()),
+                    video_id: state
+                        .get("video_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    position: number(state, "timeOffset") / 1000.0,
+                    duration: number(state, "duration") / 1000.0,
+                    last_watched: last.to_string(),
+                    kind,
+                    id,
+                },
+            ))
+        })
+        .collect();
+    list.sort_by_key(|item| std::cmp::Reverse(item.0));
+    list.into_iter()
+        .take(HISTORY_LIMIT)
+        .map(|(_, item)| item)
+        .collect()
+}
+
 /// One video's position as kept on this computer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -465,6 +516,25 @@ mod tests {
         assert_eq!(item["removed"], json!(true));
         assert_eq!(item["temp"], json!(true));
         assert_eq!(item["state"]["timeOffset"], json!(0));
+    }
+
+    #[test]
+    fn history_lists_everything_played_newest_first() {
+        let item = |id: &str, last: &str, watched_ms: u64, removed: bool| {
+            json!({"_id": id, "type": "series", "name": id, "removed": removed, "temp": false,
+                   "state": {"lastWatched": last, "overallTimeWatched": watched_ms,
+                             "video_id": format!("{id}:1:1"), "timeOffset": 0}})
+        };
+        let items = vec![
+            item("old", "2026-01-01T00:00:00.000Z", 60_000, false),
+            // Removed from the library, but still watched.
+            item("gone", "2026-10-01T00:00:00.000Z", 60_000, true),
+            // Opened but never played.
+            item("never", "2026-10-20T00:00:00.000Z", 0, false),
+            item("new", "2026-10-21T00:00:00.000Z", 60_000, false),
+        ];
+        let ids: Vec<String> = watch_history(&items).into_iter().map(|i| i.id).collect();
+        assert_eq!(ids, ["new", "gone", "old"]);
     }
 
     #[test]

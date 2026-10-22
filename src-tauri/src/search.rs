@@ -66,6 +66,7 @@ mod tests {
         CatalogRef {
             transport_url: format!("https://{name}/manifest.json"),
             addon_name: name.into(),
+            addon_id: name.into(),
             kind: "series".into(),
             id: "search".into(),
             name: "Search".into(),

@@ -1539,3 +1539,63 @@ body.player-open .app {
   pointer-events: none;
   user-select: none;
 }
+
+.page-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -8px;
+}
+
+.catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-m);
+  background: var(--surface-high);
+}
+
+.catalog-list li.off .catalog-name {
+  opacity: 0.5;
+}
+
+.catalog-name {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.catalog-name strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.catalog-list button.icon {
+  padding: 6px 10px;
+}
+
+button.visibility {
+  min-width: 84px;
+  padding: 6px 12px;
+}
+
+button.visibility.on {
+  border-color: transparent;
+  background: var(--tonal);
+  color: var(--on-tonal);
+}
+
+.reset-layout {
+  align-self: flex-start;
+}
