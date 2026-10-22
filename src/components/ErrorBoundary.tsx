@@ -1,4 +1,5 @@
 import { Component, ReactNode } from "react";
+import { TitleBar } from "./WindowControls";
 
 interface State {
   error: string | null;
@@ -16,6 +17,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
     if (this.state.error === null) return this.props.children;
     return (
       <main className="center">
+        <TitleBar />
         <div className="card">
           <h2>Something went wrong</h2>
           <p className="error">{this.state.error}</p>

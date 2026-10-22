@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { restoreSession, Session } from "./api/auth";
 import LoginScreen from "./screens/LoginScreen";
+import { TitleBar } from "./components/WindowControls";
 import { useRetryWhenOnline } from "./online";
 import HomeScreen from "./screens/HomeScreen";
 
@@ -26,6 +27,7 @@ export default function App() {
     case "loading":
       return (
         <main className="center">
+          <TitleBar />
           <div className="splash" role="status" aria-label="Loading">
             <span className="splash-mark" />
             Spaceport
@@ -35,6 +37,7 @@ export default function App() {
     case "error":
       return (
         <main className="center">
+          <TitleBar />
           <div className="card">
             <p className="error">{view.message}</p>
             <button onClick={restore}>Retry</button>
@@ -45,7 +48,10 @@ export default function App() {
       return view.session.state === "loggedIn" ? (
         <HomeScreen user={view.session.user} onSession={onSession} />
       ) : (
-        <LoginScreen onSession={onSession} />
+        <>
+          <TitleBar />
+          <LoginScreen onSession={onSession} />
+        </>
       );
   }
 }

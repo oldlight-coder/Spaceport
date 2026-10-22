@@ -1,5 +1,7 @@
-//! Secret storage. On Windows this is the Credential Manager; secrets never touch plain files.
+//! Secret storage: the Windows Credential Manager, or on Android the Android Keystore (through
+//! Spaceport's plugin). Secrets never touch plain files.
 
+#[cfg(not(target_os = "android"))]
 const SERVICE: &str = "Spaceport";
 
 #[derive(Debug, thiserror::Error)]
@@ -14,14 +16,17 @@ pub trait SecretStore: Send + Sync {
 }
 
 /// Stores each secret as a generic credential named `Spaceport` with the secret name as user.
+#[cfg(not(target_os = "android"))]
 pub struct KeyringStore;
 
+#[cfg(not(target_os = "android"))]
 impl KeyringStore {
     fn entry(name: &str) -> Result<keyring::Entry, SecretError> {
         keyring::Entry::new(SERVICE, name).map_err(|e| SecretError(e.to_string()))
     }
 }
 
+#[cfg(not(target_os = "android"))]
 impl SecretStore for KeyringStore {
     fn get(&self, name: &str) -> Result<Option<String>, SecretError> {
         match Self::entry(name)?.get_password() {
@@ -42,6 +47,46 @@ impl SecretStore for KeyringStore {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(SecretError(e.to_string())),
         }
+    }
+}
+
+/// Android: secrets encrypted with a key that lives in the Android Keystore (see
+/// `SpaceportPlugin.kt`).
+#[cfg(target_os = "android")]
+pub struct KeystoreStore<R: tauri::Runtime>(pub tauri::plugin::PluginHandle<R>);
+
+#[cfg(target_os = "android")]
+impl<R: tauri::Runtime> SecretStore for KeystoreStore<R> {
+    fn get(&self, name: &str) -> Result<Option<String>, SecretError> {
+        #[derive(serde::Deserialize)]
+        struct Found {
+            #[serde(default)]
+            value: Option<String>,
+        }
+        self.0
+            .run_mobile_plugin::<Found>("secretGet", serde_json::json!({ "name": name }))
+            .map(|found| found.value)
+            .map_err(|e| SecretError(e.to_string()))
+    }
+
+    fn set(&self, name: &str, value: &str) -> Result<(), SecretError> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>(
+                "secretSet",
+                serde_json::json!({ "name": name, "value": value }),
+            )
+            .map(|_| ())
+            .map_err(|e| SecretError(e.to_string()))
+    }
+
+    fn delete(&self, name: &str) -> Result<(), SecretError> {
+        self.0
+            .run_mobile_plugin::<serde_json::Value>(
+                "secretDelete",
+                serde_json::json!({ "name": name }),
+            )
+            .map(|_| ())
+            .map_err(|e| SecretError(e.to_string()))
     }
 }
 

@@ -19,6 +19,9 @@ pub const CINEMETA_URL: &str = "https://v3-cinemeta.strem.io/manifest.json";
 pub struct CatalogRef {
     pub transport_url: String,
     pub addon_name: String,
+    /// The addon's manifest id; with the type and catalog id it names the catalog in saved row
+    /// layouts (the transport URL can hold keys, so it is never saved).
+    pub addon_id: String,
     #[serde(rename = "type")]
     pub kind: String,
     pub id: String,
@@ -173,6 +176,7 @@ fn catalog_refs(descriptor: &Value, purpose: Purpose) -> Vec<CatalogRef> {
             Some(CatalogRef {
                 transport_url: addon.transport_url.clone(),
                 addon_name: addon.name.clone(),
+                addon_id: addon.id.clone(),
                 kind,
                 id,
                 name,

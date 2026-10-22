@@ -421,6 +421,8 @@ button.icon {
 
 .install-form input {
   flex: 1;
+  /* A text field's default width would push the button off narrow screens. */
+  min-width: 0;
 }
 
 section > .error {
@@ -1538,4 +1540,404 @@ body.player-open .app {
   filter: blur(28px) brightness(0.45) saturate(0.8);
   pointer-events: none;
   user-select: none;
+}
+
+/* On Android the video is a native view under the page: while it plays the page steps aside
+   and only the player controls (a shadow root over everything) are drawn. */
+.android-player {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+/* Fully see-through, including the canvas: a dark color-scheme on the root (set by the theme)
+   can make the web view paint an opaque base colour over the video. The controls set their own
+   scheme. */
+html[data-platform="android"]:has(body.player-open) {
+  background: transparent !important;
+  color-scheme: normal !important;
+}
+
+html[data-platform="android"] body.player-open {
+  background: transparent;
+}
+
+html[data-platform="android"] body.player-open .app {
+  visibility: hidden;
+}
+
+.page-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -8px;
+}
+
+.catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-m);
+  background: var(--surface-high);
+}
+
+.catalog-list li.off .catalog-name {
+  opacity: 0.5;
+}
+
+.catalog-name {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.catalog-name strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.catalog-list button.icon {
+  padding: 6px 10px;
+}
+
+button.visibility {
+  min-width: 84px;
+  padding: 6px 12px;
+}
+
+button.visibility.on {
+  border-color: transparent;
+  background: var(--tonal);
+  color: var(--on-tonal);
+}
+
+.reset-layout {
+  align-self: flex-start;
+}
+
+.calendar-note {
+  margin: -8px 0 16px;
+}
+
+.calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 900px;
+}
+
+.calendar-day h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.calendar-day.today h3 {
+  color: var(--accent);
+}
+
+.calendar-day ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+button.calendar-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 8px;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+}
+
+.calendar-entry img,
+.calendar-thumb {
+  flex: none;
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-s);
+  object-fit: cover;
+  background: var(--surface-high);
+}
+
+.calendar-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.calendar-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.calendar-text .muted {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.calendar-day + .calendar-day {
+  margin-top: 0;
+}
+
+button.person-link {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: var(--md-outline-variant);
+  text-underline-offset: 3px;
+}
+
+button.person-link:hover:not(:disabled) {
+  box-shadow: none;
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+.row-failed {
+  margin: -12px 0 0;
+}
+
+.row-failed .text-button {
+  font-size: 13px;
+}
+
+/* Spaceport's own window buttons (the Windows title bar is turned off). */
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  margin: -10px -24px -10px 0;
+}
+
+.window-controls button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  /* Dimmed at rest so the bright hover stands out. */
+  color: color-mix(in srgb, var(--md-on-surface) 50%, transparent);
+  transition: color 0.15s var(--ease);
+}
+
+/* Only the icon lights up: full white (the text colour, so it also shows in light mode), and
+   red for close. */
+.window-controls button:hover:not(:disabled),
+.window-controls button:active:not(:disabled) {
+  box-shadow: none;
+  background: transparent;
+  color: var(--md-on-surface);
+}
+
+.window-controls button.close:hover:not(:disabled),
+.window-controls button.close:active:not(:disabled) {
+  color: #e81123;
+}
+
+.window-controls button:focus-visible {
+  outline: none;
+  color: var(--md-on-surface);
+}
+
+.window-controls svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.title-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 0 0 16px;
+  background: var(--md-surface-container);
+}
+
+.title-bar .brand {
+  flex: 1;
+  font-size: 13px;
+}
+
+.title-bar .window-controls {
+  margin: 0;
+}
+
+/* Phones and narrow tablets (the Windows window is never this narrow): page tabs in a bottom
+   bar, compact top bar, smaller posters, and room for the status and gesture bars. */
+@media (max-width: 760px) {
+  .topbar {
+    gap: 10px;
+    padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  }
+
+  .topbar .brand {
+    display: none;
+  }
+
+  .search-form {
+    flex: 1 1 auto;
+  }
+
+  .search-form:focus-within {
+    flex-basis: auto;
+  }
+
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    justify-content: space-around;
+    gap: 0;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    background: var(--md-surface-container);
+    box-shadow: 0 -1px 0 var(--border);
+  }
+
+  button.tab {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 2px;
+    font-size: 12px;
+  }
+
+  .content {
+    padding: 16px 12px calc(84px + env(safe-area-inset-bottom));
+  }
+
+  .details {
+    padding: 16px 12px calc(84px + env(safe-area-inset-bottom));
+  }
+
+  .details-hero {
+    margin: -84px -12px 16px;
+    padding: 84px 12px 16px;
+  }
+
+  .details-head {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .details-poster,
+  .bone-details-poster {
+    flex-basis: auto;
+    width: 140px;
+  }
+
+  .details-logo {
+    max-width: 240px;
+  }
+
+  .poster-row .poster-card {
+    flex-basis: 112px;
+  }
+
+  .poster-row .poster-card.landscape {
+    flex-basis: 200px;
+  }
+
+  .poster-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 12px;
+  }
+
+  .episode img,
+  .episode-thumb {
+    flex-basis: 112px;
+    width: 112px;
+  }
+
+  .episode p {
+    display: none;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .library-bar .chip-group {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .streams-panel {
+    width: 100vw;
+    border-radius: 0;
+    padding-top: calc(20px + env(safe-area-inset-top));
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .picked {
+    top: calc(64px + env(safe-area-inset-top));
+  }
+
+  .calendar-entry img,
+  .calendar-thumb {
+    width: 80px;
+  }
+}
+
+/* Touch screens have no hover: show what would appear on it. */
+@media (hover: none) {
+  .poster-remove {
+    opacity: 1;
+  }
+
+  .poster-button:hover img,
+  .poster-button:hover .poster-placeholder {
+    outline: none;
+    transform: none;
+  }
+}
+
+/* Android: the top bar is not a window title bar, and text should not be selectable by a long
+   press on buttons and posters. */
+:root[data-platform="android"] .topbar {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+:root[data-platform="android"] button {
+  -webkit-tap-highlight-color: transparent;
 }

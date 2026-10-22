@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { arrange, useCatalogLayout } from "../catalogLayout";
+import CatalogEditor from "../components/CatalogEditor";
 import { listCatalogs } from "../api/catalog";
 import { onPlayerEvent } from "../api/player";
 import { continueWatching, dismissContinue, episodeLabel, watchedShare } from "../api/progress";
@@ -14,7 +16,25 @@ const homeCatalogs = () => listCatalogs().then((all) => all.filter((c) => !c.gen
 /** Home: one row per browsable catalog of the installed addons. */
 export default function BoardScreen() {
   const [catalogs, reload] = useLoad(homeCatalogs);
+  const { layout } = useCatalogLayout();
+  const [editing, setEditing] = useState(false);
   return (
+    <>
+    {catalogs.status === "ready" && catalogs.data.length > 0 && (
+      <div className="page-tools">
+        <button className="secondary" onClick={() => setEditing(true)}>
+          Edit rows
+        </button>
+      </div>
+    )}
+    {editing && catalogs.status === "ready" && (
+      <CatalogEditor
+        page="home"
+        heading="Home rows"
+        catalogs={catalogs.data}
+        onClose={() => setEditing(false)}
+      />
+    )}
     <LoadableList
       state={catalogs}
       onRetry={reload}
@@ -24,7 +44,7 @@ export default function BoardScreen() {
       {(list) => (
         <div className="rows">
           <ContinueRow />
-          {list.map((catalog) => (
+          {arrange("home", list, layout).map((catalog) => (
             <CatalogRow
               key={`${catalog.transportUrl} ${catalog.type} ${catalog.id}`}
               catalog={catalog}
@@ -33,6 +53,7 @@ export default function BoardScreen() {
         </div>
       )}
     </LoadableList>
+    </>
   );
 }
 

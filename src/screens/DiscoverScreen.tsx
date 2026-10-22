@@ -4,6 +4,8 @@ import { LoadableList, useLoad } from "../components/Loadable";
 import NeedAddons from "../components/NeedAddons";
 import PosterCard from "../components/PosterCard";
 import { PosterGridSkeleton } from "../components/Skeleton";
+import { arrange, useCatalogLayout } from "../catalogLayout";
+import CatalogEditor from "../components/CatalogEditor";
 
 interface Props {
   type: string;
@@ -17,16 +19,37 @@ export default function DiscoverScreen({ type, title }: Props) {
     [type],
   );
   const [catalogs, reload] = useLoad(load);
+  const { layout } = useCatalogLayout();
+  const [editing, setEditing] = useState(false);
   return (
     <section>
-      <h2>{title}</h2>
+      <h2 className="row-head">
+        {title}
+        {catalogs.status === "ready" && catalogs.data.length > 1 && (
+          <button className="text-button" onClick={() => setEditing(true)}>
+            Edit catalogs
+          </button>
+        )}
+      </h2>
+      {editing && catalogs.status === "ready" && (
+        <CatalogEditor
+          page={type}
+          heading={`${title} catalogs`}
+          catalogs={catalogs.data}
+          onClose={() => setEditing(false)}
+        />
+      )}
       <LoadableList
         state={catalogs}
         onRetry={reload}
         empty={<NeedAddons text={`None of your addons has ${title.toLowerCase()} catalogs.`} />}
         skeleton={<PosterGridSkeleton />}
       >
-        {(list) => <CatalogBrowser key={type} catalogs={list} />}
+        {(list) => {
+          const shown = arrange(type, list, layout);
+          // With every catalog hidden, the page still shows something.
+          return <CatalogBrowser key={type} catalogs={shown.length > 0 ? shown : list} />;
+        }}
       </LoadableList>
     </section>
   );

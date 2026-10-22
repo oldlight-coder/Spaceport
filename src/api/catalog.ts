@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 export interface CatalogRef {
   transportUrl: string;
   addonName: string;
+  /** The addon's manifest id; names the catalog in the saved row layout. */
+  addonId: string;
   type: string;
   id: string;
   name: string;

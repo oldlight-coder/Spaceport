@@ -1,5 +1,6 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { ACCENT_PRESETS, Appearance, ThemeMode } from "../theme";
+import { isAndroid } from "../platform";
 import { CODECS, Settings, SubtitleStyle } from "../api/settings";
 import Avatar from "../components/Avatar";
 import LanguageList from "../components/LanguageList";
@@ -15,7 +16,7 @@ const SUBTITLE_COLOURS = [
 const AVATAR_SIZE = 128;
 
 const THEME_MODES: { value: ThemeMode; label: string }[] = [
-  { value: "system", label: "Follow Windows" },
+  { value: "system", label: isAndroid ? "Follow system" : "Follow Windows" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ];
@@ -288,6 +289,24 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
       </section>
 
       <section className="settings-section">
+        <h2>Playback</h2>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={settings.autoPlayNext}
+            onChange={(e) => update({ autoPlayNext: e.target.checked })}
+          />
+          <span>
+            <strong>Play the next episode automatically</strong>
+            <span className="muted small">
+              Near the end of an episode a countdown starts the next one. When off, the next
+              episode is offered with a Play button instead.
+            </span>
+          </span>
+        </label>
+      </section>
+
+      <section className="settings-section">
         <h2>Anime</h2>
         <label className="toggle">
           <input
@@ -320,6 +339,21 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
             </span>
           </span>
         </label>
+        {isAndroid && (
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={settings.torrentWifiOnly}
+              onChange={(e) => update({ torrentWifiOnly: e.target.checked })}
+            />
+            <span>
+              <strong>Only on Wi-Fi</strong>
+              <span className="muted small">
+                Torrents do not start on mobile data. Debrid and direct links still play.
+              </span>
+            </span>
+          </label>
+        )}
         <label className="setting cache-setting">
           <span className="setting-label">Torrent cache size (GB)</span>
           <input

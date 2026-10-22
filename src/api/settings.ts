@@ -17,6 +17,12 @@ export interface SubtitleStyle {
   position: number;
 }
 
+/** Row order and hidden rows, each catalog named "addonId/type/catalogId". */
+export interface CatalogLayout {
+  order: string[];
+  hidden: string[];
+}
+
 export interface Settings {
   audioLanguages: string[];
   subtitleLanguages: string[];
@@ -25,10 +31,15 @@ export interface Settings {
   avatar: string | null;
   torrentDht: boolean;
   torrentCacheGb: number;
+  /** Android: play torrents only on Wi-Fi. */
+  torrentWifiOnly: boolean;
   subtitleStyle: SubtitleStyle;
   /** Skip anime intros, outros and recaps without asking. */
   animeAutoSkip: boolean;
+  /** Start the next episode when the countdown runs out. */
+  autoPlayNext: boolean;
   appearance: Appearance;
+  catalogLayout: CatalogLayout;
 }
 
 export const getSettings = () => invoke<Settings>("settings_get");

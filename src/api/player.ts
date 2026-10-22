@@ -6,6 +6,8 @@ export type PlayerEvent =
   | { kind: "loaded"; label: string }
   | { kind: "fallback"; label: string; reason: string }
   | { kind: "ended" }
+  | { kind: "opened" }
+  | { kind: "layout"; mini: boolean }
   | { kind: "failed"; message: string }
   | { kind: "closed" };
 

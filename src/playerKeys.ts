@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { emitTo } from "@tauri-apps/api/event";
 import { onPlayerEvent, PLAYER_KEY_EVENT, PLAYER_OPEN_CLASS } from "./api/player";
+import { isAndroid } from "./platform";
 
 /** The player controls window's label (`CONTROLS_WINDOW` in the backend). */
 const CONTROLS_WINDOW = "player-controls";
@@ -11,10 +12,14 @@ const CONTROLS_WINDOW = "player-controls";
  */
 export function useForwardPlayerKeys() {
   useEffect(() => {
+    // On Android the controls are part of this page and hear its keys themselves.
+    if (isAndroid) return;
     let playing = false;
     const unlisten = onPlayerEvent((event) => {
       if (event.kind === "loaded" || event.kind === "fallback") playing = true;
       if (event.kind === "closed" || event.kind === "failed") playing = false;
+      // The mini player leaves the page in use: keys are for the page then.
+      if (event.kind === "layout") playing = !event.mini;
     });
     const onKey = (e: KeyboardEvent) => {
       if (!playing || e.ctrlKey || e.altKey || e.metaKey) return;
@@ -37,6 +42,10 @@ export function usePlayerBackdrop() {
     const unlisten = onPlayerEvent((event) => {
       if (event.kind === "closed" || event.kind === "failed") {
         document.body.classList.remove(PLAYER_OPEN_CLASS);
+      }
+      // The page is used again beside the mini player, so it is shown sharp.
+      if (event.kind === "layout") {
+        document.body.classList.toggle(PLAYER_OPEN_CLASS, !event.mini);
       }
     });
     return () => {

@@ -91,6 +91,30 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - **Acceptance:** a title added here shows in the official Stremio app's library, and one removed
   here leaves it, with its watch progress kept.
 
+## M13. Browsing and player conveniences
+- [x] Calendar of upcoming episodes
+- [x] Home row editor (order and hide rows; catalogs on Movies/Series/Anime)
+- [x] Watch history
+- [x] "More like this" and searchable cast and directors on the title page
+- [x] Auto-play next episode switch in Settings
+- [x] Shortcut help on "?" in the player
+- **Acceptance:** each works in the Windows app.
+
+## M14. Mini player
+- [x] Shrink the playing video to a corner window inside Spaceport and keep browsing; restore
+  to full size
+- **Acceptance:** browsing, searching and opening titles work while the mini player plays.
+
+## M15. Android
+- [x] Project: Tauri Android target, build and signing steps in README (APK, owner's key)
+- [x] Touch layout of every screen for phones and tablets (portrait and landscape)
+- [x] Secrets in the Android Keystore
+- [x] Player on Media3 (ExoPlayer): sources, fallback, audio and subtitle tracks, addon
+  subtitles, resume, progress, next episode, AniSkip
+- [x] Torrent engine on Android with a Wi-Fi-only setting and a smaller default cache
+- **Acceptance:** sideloaded APK on the owner's phone: login, browse, pick, play, resume, skip
+  intro, torrent and debrid streams.
+
 ## Decisions
 (Record any spec changes agreed with the owner here.)
 - 2026-10-20: Settings page brought forward from M8 at the owner's request. A cog button in the top
@@ -130,6 +154,16 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-22: Adding and removing library titles was missing from SPEC section 1 (owner noticed);
   added as M12. Like the official apps, removing only sets the entry's "removed" flag, so watch
   progress and watched marks survive and come back if the title is added again.
+- 2026-10-22: New features agreed with the owner (SPEC section 9): M13 conveniences, M14 mini
+  player, M15 Android. Android choices: Media3/ExoPlayer player (ASS subtitles shown as plain
+  text there), phones and tablets (no TV layout), built-in torrents with a Wi-Fi-only switch,
+  sideloaded APK signed with the owner's key (no store account). On Android secrets go in the
+  Android Keystore, the counterpart of the Windows Credential Manager.
+- 2026-10-22: Android player design: Media3 draws the video in a native view under the page and
+  the page draws the same React controls over it; Rust drives Media3 through an mpv-compatible
+  layer (player/exo.rs), so queue, fallback, resume and progress code is shared. Not on Android:
+  subtitle delay (Media3 has no timing offset), the mini player, the volume slider (volume keys)
+  and loading subtitle files from the device.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -307,3 +341,52 @@ pass on Windows. The owner tests each milestone before the next one starts.
   library_set commands, "+ Add to library" / "✓ In library" on the title page, a remove button on
   Library posters, and the Library refreshing after changes. Unit test for the flags.
 - 2026-10-22: M12 accepted by the owner on Windows; ticked.
+- 2026-10-22: M13 (not yet ticked: needs a Windows check): Settings > Playback switch for auto-playing the next episode (off shows an
+  "Up next" card with a Play button and no countdown); "?" key and button show the player's
+  keyboard shortcuts.
+- 2026-10-22: M13 (not yet ticked): Library > History tab (every title played, newest first,
+  with episode and day; from the Stremio library, including removed titles); "Edit rows" on
+  Home and "Edit catalogs" on Movies/Series/Anime to reorder and hide, saved per page in
+  settings.json by addon id and catalog id (never by link).
+- 2026-10-22: M13 (not yet ticked): Calendar tab with the followed series' episodes from a
+  week back to two months ahead, grouped by day ("New" and "Upcoming" tags); shares the
+  followed-series lookup and 3 h details cache with the new-episode check.
+- 2026-10-22: M13 (not yet ticked): "More like this" row on title pages (same type and first
+  genre from a catalog that filters by genre, the title's own addon first) and cast and
+  director names that search all addons. M13 code complete.
+- 2026-10-22: Addon requests are retried once, 1.5 s later, after a 502-504 answer (the owner hit
+  504s from Cinemeta and TMDB searching a cast name); failed search rows show one quiet line
+  with "Try again" instead of a heading and a red error.
+- 2026-10-22: M13 accepted by the owner on Windows; ticked.
+- 2026-10-22: M14 implemented (not yet ticked: needs a Windows check): the ⧉ button in the
+  player's top bar moves the video and the controls window into a 16:9 box in the main
+  window's bottom-right corner (layout.rs, unit-tested); the page is sharp and usable, keys go
+  to it, and the box has play/pause, full size (also double-click or Esc) and close. Starting
+  another video from the page, or fullscreen, brings it back to full size.
+- 2026-10-22: Windows title bar replaced by Spaceport's own (owner's request): the top bar moves the window (drag, double-click to maximize) and has minimize, maximize/restore and close; sign-in and start-up screens get a slim bar with the same buttons. Only the main window may use these window permissions.
+- 2026-10-22: Window buttons highlight only their icon on hover (accent colour; red for close), per the owner.
+- 2026-10-22: Window button hover is now white (the text colour) on dimmed resting icons; close stays red.
+- 2026-10-22: M14 accepted by the owner on Windows; ticked.
+- 2026-10-22: M15 step 1 (owner approved a GitHub Actions build): Tauri Android project in
+  src-tauri/gen/android (no TV launcher; plain http allowed, for the 127.0.0.1 torrent server
+  and http addons), HTTPS on Android through rustls + ring with Mozilla's root certificates
+  (Windows keeps its system TLS), the libmpv pin check only for Windows builds, and a workflow
+  that builds a debug arm64 APK and validates the Gradle wrapper. The Gradle distribution's
+  SHA-256 gets pinned from the checksum Gradle publishes (printed by the workflow).
+- 2026-10-22: M15: secrets on Android through Spaceport's own plugin (SpaceportPlugin.kt): an
+  AES-256 key created in the Android Keystore encrypts each secret (AES-GCM); only ciphertext
+  is kept in the app's private storage. Windows keeps the Credential Manager.
+- 2026-10-22: M15: phone layout (page tabs in a bottom bar, compact top bar, smaller posters,
+  stacked title page, one-column settings, safe areas, hover-only controls always shown on
+  touch, no window buttons on Android, "Follow system" theme label). Android build fixes:
+  torrents' SHA-1 from aws-lc on Android (crypto-hash needs OpenSSL there); Gradle 9.6.1
+  pinned to the SHA-256 Gradle publishes (9c0f7fae…9e14).
+- 2026-10-22: M15: Android player on Media3 (sources, fallback, audio and subtitle tracks, addon
+  subtitles, resume, progress, next episode, AniSkip; back button closes it, landscape without
+  system bars), tap and double-tap controls; torrents "only on Wi-Fi" setting and a 2 GB default
+  cache on Android. Untested on a device yet.
+- 2026-10-22: M15 device test: login, browsing, resume, audio and back button work; the video
+  did not show (sound only). Video view moved to a TextureView and the page canvas forced
+  transparent while playing.
+- 2026-10-22: M15 accepted: the owner tested the sideloaded APK on their phone and every feature
+  works (login, browsing, playback with picture and subtitles, resume, skip intro, back button).

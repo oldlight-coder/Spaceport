@@ -2,6 +2,7 @@ mod aniskip;
 mod auth;
 mod fuzzy;
 mod language;
+mod mobile;
 mod new_episodes;
 mod player;
 mod progress;
@@ -20,7 +21,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use auth::Session;
 use ranking::RankedResults;
-use secrets::{KeyringStore, SecretStore};
+use secrets::SecretStore;
 use settings::{Settings, SettingsStore};
 use stremio::addons::{self, Addon, AddonError};
 use stremio::api::{StremioApi, ADDON_TIMEOUT, DEFAULT_BASE_URL};
@@ -392,13 +393,20 @@ struct TrackedTitle {
 /// How long fetched series details are reused by the new-episode check.
 const META_CACHE: std::time::Duration = std::time::Duration::from_secs(3 * 60 * 60);
 
-/// New episodes of the series in the library, in Continue Watching and marked as watching, by
-/// title id. Titles without new episodes are left out, as are ones whose details failed.
-#[tauri::command]
-async fn new_episodes(
-    state: tauri::State<'_, AppState>,
+/// A series followed for new episodes and the calendar, with its details.
+struct FollowedSeries {
+    id: String,
+    item: Option<Value>,
+    since: Option<i64>,
+    meta: MetaDetails,
+}
+
+/// The series in the library, in Continue Watching and marked as watching, with their
+/// details. Series whose details cannot be fetched are left out.
+async fn followed_series(
+    state: &AppState,
     tracked: Vec<TrackedTitle>,
-) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+) -> Result<Vec<FollowedSeries>, String> {
     let key = state.auth_key()?;
     let items = state
         .api
@@ -426,41 +434,80 @@ async fn new_episodes(
             }
         }
     }
-    let now = progress::now_millis();
     let mut found = Vec::new();
     // A few at a time, so a big library does not flood the metadata addons.
     for batch in titles.chunks(6) {
-        let checks = batch.iter().map(|(id, kind, item, since)| {
-            let state = &*state;
-            async move {
-                let cached = state
-                    .metas
-                    .lock()
-                    .unwrap()
-                    .get(id)
-                    .filter(|(at, _)| at.elapsed() < META_CACHE)
-                    .map(|(_, meta)| meta.clone());
-                let meta = match cached {
-                    Some(meta) => meta,
-                    None => {
-                        let meta = fetch_meta(state, kind, id, None).await.ok()?;
-                        let entry = (std::time::Instant::now(), meta.clone());
-                        state.metas.lock().unwrap().insert(id.clone(), entry);
-                        meta
-                    }
-                };
-                let new = new_episodes::new_episodes(&meta, item.as_ref(), *since, now);
-                (!new.is_empty()).then(|| (id.clone(), new))
-            }
+        let lookups = batch.iter().map(|(id, kind, item, since)| async move {
+            let cached = state
+                .metas
+                .lock()
+                .unwrap()
+                .get(id)
+                .filter(|(at, _)| at.elapsed() < META_CACHE)
+                .map(|(_, meta)| meta.clone());
+            let meta = match cached {
+                Some(meta) => meta,
+                None => {
+                    let meta = fetch_meta(state, kind, id, None).await.ok()?;
+                    let entry = (std::time::Instant::now(), meta.clone());
+                    state.metas.lock().unwrap().insert(id.clone(), entry);
+                    meta
+                }
+            };
+            Some(FollowedSeries {
+                id: id.clone(),
+                item: item.clone(),
+                since: *since,
+                meta,
+            })
         });
         found.extend(
-            futures_util::future::join_all(checks)
+            futures_util::future::join_all(lookups)
                 .await
                 .into_iter()
                 .flatten(),
         );
     }
-    Ok(found.into_iter().collect())
+    Ok(found)
+}
+
+/// New episodes of the series in the library, in Continue Watching and marked as watching, by
+/// title id. Titles without new episodes are left out, as are ones whose details failed.
+#[tauri::command]
+async fn new_episodes(
+    state: tauri::State<'_, AppState>,
+    tracked: Vec<TrackedTitle>,
+) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    let now = progress::now_millis();
+    Ok(followed_series(&state, tracked)
+        .await?
+        .into_iter()
+        .filter_map(|s| {
+            let new = new_episodes::new_episodes(&s.meta, s.item.as_ref(), s.since, now);
+            (!new.is_empty()).then_some((s.id, new))
+        })
+        .collect())
+}
+
+/// Episodes of the followed series released in the last week or coming in the next two
+/// months, by release date.
+#[tauri::command]
+async fn calendar(
+    state: tauri::State<'_, AppState>,
+    tracked: Vec<TrackedTitle>,
+) -> Result<Vec<new_episodes::CalendarEntry>, String> {
+    let now = progress::now_millis();
+    let mut entries: Vec<new_episodes::CalendarEntry> = followed_series(&state, tracked)
+        .await?
+        .iter()
+        .flat_map(|s| new_episodes::calendar_entries(&s.meta, now))
+        .collect();
+    entries.sort_by(|a, b| {
+        a.released
+            .cmp(&b.released)
+            .then(a.series_name.cmp(&b.series_name))
+    });
+    Ok(entries)
 }
 
 /// A title's details from the first addon that has them; `preferred` is tried first.
@@ -552,6 +599,18 @@ async fn player_open(
 ) -> Result<(), String> {
     let kind = item.kind.clone();
     let engine = app.state::<AppState>().torrents.clone();
+    // On Android, torrents may be kept off mobile data (Settings > Torrents).
+    let wifi_only = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .unwrap()
+        .torrent_wifi_only;
+    let has_torrents = candidates
+        .iter()
+        .any(|c| c.url.is_none() && c.torrent.is_some());
+    let torrents_allowed =
+        !(cfg!(target_os = "android") && wifi_only && has_torrents) || mobile::on_wifi(&app).await;
     let mut playable = Vec::new();
     for candidate in candidates {
         let url = match (candidate.url, candidate.torrent) {
@@ -562,6 +621,7 @@ async fn player_open(
             {
                 url
             }
+            (None, Some(_)) if !torrents_allowed => continue,
             // Torrents play through the local stream server.
             (None, Some(source)) => match engine.register(source).await {
                 Ok(url) => url,
@@ -576,7 +636,12 @@ async fn player_open(
         });
     }
     if playable.is_empty() {
-        return Err("none of these streams can be played".to_string());
+        return Err(if torrents_allowed {
+            "none of these streams can be played".to_string()
+        } else {
+            "torrents only play on Wi-Fi (Settings > Torrents), and there is no other stream"
+                .to_string()
+        });
     }
     let candidates = playable;
     let settings = app.state::<AppState>().settings.lock().unwrap().clone();
@@ -621,6 +686,7 @@ async fn player_open(
         .recv()
         .map_err(|_| "the player did not start".to_string())??;
     player::open_controls(&app)?;
+    let _ = tauri::Emitter::emit(&app, "player", player::PlayerEvent::Opened);
 
     // Anime skip times need the episode's length, so they are fetched once it is known.
     if let Some(anime) = anime {
@@ -758,6 +824,20 @@ async fn save_progress(app: tauri::AppHandle, report: player::WatchReport) {
         }
     }
     let _ = state.api.put_library_items(&key, &[item]).await;
+}
+
+/// Every title played, newest first, from the Stremio library datastore.
+#[tauri::command]
+async fn watch_history(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<progress::ContinueItem>, String> {
+    let key = state.auth_key()?;
+    let items = state
+        .api
+        .library_items(&key)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(progress::watch_history(&items))
 }
 
 /// Whether the title is in the user's Stremio library.
@@ -1034,9 +1114,23 @@ async fn addons_configure(
         .map_err(|e| e.to_string())
 }
 
+/// Where secrets go: the Android Keystore through Spaceport's plugin on Android, the
+/// Credential Manager elsewhere.
+#[cfg(target_os = "android")]
+fn secret_store<R: tauri::Runtime>(app: &tauri::App<R>) -> Box<dyn SecretStore> {
+    let native = app.state::<mobile::Native<R>>();
+    Box::new(secrets::KeystoreStore(native.0.clone()))
+}
+
+#[cfg(not(target_os = "android"))]
+fn secret_store<R: tauri::Runtime>(_app: &tauri::App<R>) -> Box<dyn SecretStore> {
+    Box::new(secrets::KeyringStore)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(mobile::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -1051,7 +1145,7 @@ pub fn run() {
             );
             app.manage(AppState {
                 api: StremioApi::new(DEFAULT_BASE_URL),
-                secrets: Box::new(KeyringStore),
+                secrets: secret_store(app),
                 sources: Mutex::new(Vec::new()),
                 settings: Mutex::new(settings),
                 settings_store,
@@ -1114,8 +1208,10 @@ pub fn run() {
             continue_watching,
             continue_dismiss,
             library_status,
+            watch_history,
             library_set,
             new_episodes,
+            calendar,
             search_assist,
             title_progress,
             watched_get,

@@ -3,12 +3,15 @@ import { LIBRARY_CHANGED, LibraryItem, listLibrary, setInLibrary } from "../api/
 import { LoadableList, useLoad } from "../components/Loadable";
 import PosterCard from "../components/PosterCard";
 import { setWatching, useWatching } from "../watching";
+import { episodeLabel, watchedShare, watchHistory } from "../api/progress";
+import { onPlayerEvent } from "../api/player";
 import { PosterGridSkeleton } from "../components/Skeleton";
 
 // Series first, then movies, then any other type an addon uses.
 const ORDER = ["series", "movie"];
 const HEADINGS: Record<string, string> = { movie: "Movies", series: "Series" };
 const WATCHING = "watching";
+const HISTORY = "history";
 const TAB_KEY = "spaceport.libraryTab";
 const SORT_KEY = "spaceport.librarySort";
 
@@ -140,14 +143,15 @@ export default function LibraryScreen() {
   }));
 
   const groups = library.status === "ready" ? byType(library.data) : [];
-  const tabs = [
+  const tabs: { key: string; label: string; count?: number }[] = [
     { key: WATCHING, label: "Watching", count: watching.length },
+    { key: HISTORY, label: "History" },
     ...groups.map((g) => ({ key: g.type, label: g.heading, count: g.items.length })),
   ];
   // A remembered tab that no longer exists falls back to the first one with titles.
   const current = tabs.some((t) => t.key === tab)
     ? tab
-    : (tabs.find((t) => t.count > 0) ?? tabs[0]).key;
+    : (tabs.find((t) => (t.count ?? 0) > 0) ?? tabs[0]).key;
   const group = groups.find((g) => g.type === current);
 
   return (
@@ -163,10 +167,11 @@ export default function LibraryScreen() {
               className={t.key === current ? "chip active" : "chip"}
               onClick={() => choose(t.key)}
             >
-              {t.label} <span className="muted">{t.count}</span>
+              {t.label} {t.count != null && <span className="muted">{t.count}</span>}
             </button>
           ))}
         </div>
+        {current !== HISTORY && (
         <select
           value={sort}
           onChange={(e) => chooseSort(e.target.value as Sort)}
@@ -178,8 +183,11 @@ export default function LibraryScreen() {
             </option>
           ))}
         </select>
+        )}
       </div>
-      {current === WATCHING ? (
+      {current === HISTORY ? (
+        <HistoryTab />
+      ) : current === WATCHING ? (
         watching.length === 0 ? (
           <p className="muted">
             Nothing here yet. Use “Mark as watching” on a title’s page to keep it here.
@@ -225,5 +233,56 @@ export default function LibraryScreen() {
         </>
       )}
     </section>
+  );
+}
+
+/** "Today", "Yesterday", "3 days ago", or the date for older plays. */
+function whenWatched(iso: string) {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return "";
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((day(new Date()) - day(then)) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return then.toLocaleDateString();
+}
+
+/** Everything played, newest first, with the episode and when. */
+function HistoryTab() {
+  const [history, reload] = useLoad(watchHistory);
+  useEffect(() => {
+    const unlisten = onPlayerEvent((event) => {
+      // Progress is saved as the player closes; read again shortly after.
+      if (event.kind === "closed") window.setTimeout(reload, 2000);
+    });
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+  }, [reload]);
+  return (
+    <LoadableList
+      state={history}
+      onRetry={reload}
+      empty="Nothing watched yet."
+      skeleton={<PosterGridSkeleton />}
+    >
+      {(items) => (
+        <ul className="poster-grid">
+          {items.map((item) => (
+            <PosterCard
+              key={item.id}
+              name={item.name}
+              poster={item.poster}
+              title={{ type: item.type, id: item.id }}
+              progress={watchedShare(item)}
+              caption={[episodeLabel(item.videoId, item.id), whenWatched(item.lastWatched)]
+                .filter(Boolean)
+                .join(" · ")}
+            />
+          ))}
+        </ul>
+      )}
+    </LoadableList>
   );
 }

@@ -1,7 +1,9 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { onPlayerEvent, PLAY_NEXT_EVENT, PLAYER_KEY_EVENT } from "../api/player";
+import { getSettings } from "../api/settings";
 import { formatTime } from "../format";
+import { isAndroid } from "../platform";
 import {
   control,
   Control,
@@ -19,6 +21,21 @@ const NEXT_UP_BEFORE_END = 30;
 const NEXT_UP_COUNTDOWN = 10;
 const SKIP_SECONDS = 10;
 const SUB_DELAY_STEP = 0.1;
+/** Two taps this close together (ms) are a double tap. */
+const DOUBLE_TAP_MS = 250;
+
+/** The keys the player answers to, for the help shown on "?". */
+const SHORTCUTS: [string, string][] = [
+  ["Space or K", "Play / pause"],
+  ["← or J", `Back ${SKIP_SECONDS} seconds`],
+  ["→ or L", `Forward ${SKIP_SECONDS} seconds`],
+  ["↑ / ↓", "Volume up / down"],
+  ["M", "Mute"],
+  ["F or double-click", "Fullscreen"],
+  ["Z / X", "Subtitles earlier / later"],
+  ["Esc", "Leave fullscreen, then close the player"],
+  ["?", "Show or hide this list"],
+];
 const SUB_SCALE_STEP = 0.1;
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 /** A seek counts as done once playback is this close to the target, in seconds. */
@@ -115,11 +132,18 @@ function useNextUp(state: PlaybackState | null) {
   const [requested, setRequested] = useState(false);
   const title = state?.title;
 
+  // Whether the countdown starts the next episode by itself (Settings > Playback), read again
+  // for every video so a change applies from the next one.
+  const [auto, setAuto] = useState(true);
+
   // A new video starts with a fresh countdown.
   useEffect(() => {
     setCancelled(false);
     setShownAt(null);
     setRequested(false);
+    getSettings()
+      .then((s) => setAuto(s.autoPlayNext ?? true))
+      .catch(() => {});
   }, [title]);
 
   const remaining = state ? state.duration - state.position : Infinity;
@@ -155,7 +179,9 @@ function useNextUp(state: PlaybackState | null) {
 
   const elapsed = shownAt == null ? 0 : Math.max(0, now - shownAt);
   const secondsLeft =
-    shownAt == null ? null : Math.max(0, NEXT_UP_COUNTDOWN - Math.floor(elapsed / 1000));
+    shownAt == null || !auto
+      ? null
+      : Math.max(0, NEXT_UP_COUNTDOWN - Math.floor(elapsed / 1000));
 
   useEffect(() => {
     if (secondsLeft === 0) playNext();
@@ -164,15 +190,16 @@ function useNextUp(state: PlaybackState | null) {
   // The episode ended before the countdown did.
   useEffect(() => {
     const stop = onPlayerEvent((event) => {
-      if (event.kind === "ended" && state?.nextUp && !cancelled) playNext();
+      if (event.kind === "ended" && state?.nextUp && !cancelled && auto) playNext();
     });
     return () => {
       stop.then((unlisten) => unlisten());
     };
-  }, [state?.nextUp, cancelled, playNext]);
+  }, [state?.nextUp, cancelled, playNext, auto]);
 
   return {
     label: state?.nextUp ?? null,
+    shown: shownAt != null,
     secondsLeft,
     playNext,
     cancel: () => {
@@ -226,6 +253,7 @@ export default function Controls() {
   const [idle, setIdle] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuName | null>(null);
+  const [help, setHelp] = useState(false);
   // While the seek bar is dragged, show the dragged position instead of the playing one.
   const [dragging, setDragging] = useState<number | null>(null);
   // After a seek, keep showing the target until playback gets there: seeking into a part that
@@ -236,6 +264,7 @@ export default function Controls() {
   const resumeShownFor = useRef<string | null>(null);
   const hideTimer = useRef<number | undefined>(undefined);
   const clickTimer = useRef<number | undefined>(undefined);
+  const lastTap = useRef(0);
   const overBar = useRef(false);
 
   useEffect(() => {
@@ -311,13 +340,13 @@ export default function Controls() {
   }, []);
 
   useEffect(() => {
-    if (paused || menu) {
+    if (paused || menu || help) {
       window.clearTimeout(hideTimer.current);
       setIdle(false);
     } else {
       wake();
     }
-  }, [paused, menu, wake]);
+  }, [paused, menu, help, wake]);
 
   // Keys pressed here or forwarded by the main window (PLAYER_KEY_EVENT). Returns whether the
   // key did something.
@@ -356,8 +385,13 @@ export default function Controls() {
         case "x":
           send({ action: "adjustSubtitleDelay", seconds: SUB_DELAY_STEP });
           break;
+        case "?":
+          setHelp((shown) => !shown);
+          break;
         case "Escape":
-          if (menu) setMenu(null);
+          if (state?.mini) send({ action: "setMini", on: false });
+          else if (help) setHelp(false);
+          else if (menu) setMenu(null);
           else send({ action: "back" });
           break;
         default:
@@ -365,7 +399,7 @@ export default function Controls() {
       }
       return true;
     },
-    [state?.volume, wake, skip, menu],
+    [state?.volume, state?.mini, wake, skip, menu, help],
   );
 
   // Registered once: the state changes four times a second, and re-registering the forwarded
@@ -386,18 +420,44 @@ export default function Controls() {
   }, []);
 
   // A single click pauses (or closes an open menu); a double click toggles fullscreen.
+  // On a touch screen a tap shows or hides the controls and a double tap on either half skips.
   function onSurfaceClick(e: React.MouseEvent) {
     if (e.target !== e.currentTarget) return;
     if (menu) {
       setMenu(null);
       return;
     }
+    if (isAndroid) {
+      onTap(e);
+      return;
+    }
     window.clearTimeout(clickTimer.current);
     clickTimer.current = window.setTimeout(() => send({ action: "togglePause" }), 220);
   }
 
+  function onTap(e: React.MouseEvent) {
+    window.clearTimeout(clickTimer.current);
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_MS) {
+      lastTap.current = 0;
+      const box = e.currentTarget.getBoundingClientRect();
+      skip(e.clientX < box.left + box.width / 2 ? -SKIP_SECONDS : SKIP_SECONDS);
+      return;
+    }
+    lastTap.current = now;
+    const shown = !idle;
+    clickTimer.current = window.setTimeout(() => {
+      if (shown) {
+        window.clearTimeout(hideTimer.current);
+        setIdle(true);
+      } else {
+        wake();
+      }
+    }, DOUBLE_TAP_MS);
+  }
+
   function onSurfaceDoubleClick(e: React.MouseEvent) {
-    if (e.target !== e.currentTarget) return;
+    if (e.target !== e.currentTarget || isAndroid) return;
     window.clearTimeout(clickTimer.current);
     send({ action: "toggleFullscreen" });
   }
@@ -435,6 +495,8 @@ export default function Controls() {
   else if (seeking) badge = "Seeking…";
   else if (state?.buffering) badge = "Buffering…";
 
+  if (state?.mini) return <MiniControls state={state} paused={paused} />;
+
   return (
     <div
       className={idle ? "surface idle" : "surface"}
@@ -446,6 +508,16 @@ export default function Controls() {
         <button className="icon" onClick={() => send({ action: "close" })} aria-label="Close player">
           ←
         </button>
+        {!isAndroid && (
+          <button
+            className="icon mini-enter"
+            onClick={() => send({ action: "setMini", on: true })}
+            aria-label="Mini player"
+            title="Mini player: keep watching while you browse"
+          >
+            ⧉
+          </button>
+        )}
         <div>
           <div className="title">{state?.title ?? "Spaceport"}</div>
           {state?.stream && <div className="stream">{state.stream}</div>}
@@ -461,16 +533,36 @@ export default function Controls() {
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {help && (
+        <div className="shortcut-help" role="dialog" aria-label="Keyboard shortcuts">
+          <div className="shortcut-head">
+            <strong>Keyboard shortcuts</strong>
+            <button className="icon" onClick={() => setHelp(false)} aria-label="Close">
+              ✕
+            </button>
+          </div>
+          <dl>
+            {SHORTCUTS.map(([keys, action]) => (
+              <div key={keys}>
+                <dt>{keys}</dt>
+                <dd>{action}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
       {/* Near the end the next-episode card takes this place and offers Play now instead. */}
-      {skipSegment && nextUp.secondsLeft == null && (
+      {skipSegment && !nextUp.shown && (
         <button className="skip-button" onClick={skipSegment.skip}>
           {skipSegment.label} ⏭
         </button>
       )}
-      {nextUp.secondsLeft != null && nextUp.label && (
+      {nextUp.shown && nextUp.label && (
         <div className="next-up" role="status">
           <div className="next-up-label">
-            <span className="muted">Next episode in {nextUp.secondsLeft}</span>
+            <span className="muted">
+              {nextUp.secondsLeft != null ? `Next episode in ${nextUp.secondsLeft}` : "Up next"}
+            </span>
             <strong>{nextUp.label}</strong>
           </div>
           <div className="next-up-actions">
@@ -556,15 +648,18 @@ export default function Controls() {
           >
             {state?.muted || state?.volume === 0 ? "🔇" : "🔊"}
           </button>
-          <input
-            className="volume"
-            type="range"
-            min={0}
-            max={100}
-            value={state?.muted ? 0 : Math.min(state?.volume ?? 100, 100)}
-            onChange={(e) => send({ action: "setVolume", volume: Number(e.target.value) })}
-            aria-label="Volume"
-          />
+          {/* Phones have volume keys. */}
+          {!isAndroid && (
+            <input
+              className="volume"
+              type="range"
+              min={0}
+              max={100}
+              value={state?.muted ? 0 : Math.min(state?.volume ?? 100, 100)}
+              onChange={(e) => send({ action: "setVolume", volume: Number(e.target.value) })}
+              aria-label="Volume"
+            />
+          )}
           <span className="grow" />
 
           <Menu
@@ -605,36 +700,39 @@ export default function Controls() {
                 options: [],
                 content: (
                   <div className="adjust">
-                    <div className="adjust-row">
-                      <span>Delay</span>
-                      <button
-                        onClick={() =>
-                          send({ action: "adjustSubtitleDelay", seconds: -SUB_DELAY_STEP })
-                        }
-                        aria-label="Show subtitles earlier"
-                      >
-                        −
-                      </button>
-                      <span className="adjust-value">
-                        {subDelay > 0 ? "+" : ""}
-                        {subDelay.toFixed(1)} s
-                      </span>
-                      <button
-                        onClick={() =>
-                          send({ action: "adjustSubtitleDelay", seconds: SUB_DELAY_STEP })
-                        }
-                        aria-label="Show subtitles later"
-                      >
-                        +
-                      </button>
-                      <button
-                        className="reset"
-                        onClick={() => send({ action: "resetSubtitleDelay" })}
-                        disabled={subDelay === 0}
-                      >
-                        Reset
-                      </button>
-                    </div>
+                    {/* Media3 cannot shift subtitle timing. */}
+                    {!isAndroid && (
+                      <div className="adjust-row">
+                        <span>Delay</span>
+                        <button
+                          onClick={() =>
+                            send({ action: "adjustSubtitleDelay", seconds: -SUB_DELAY_STEP })
+                          }
+                          aria-label="Show subtitles earlier"
+                        >
+                          −
+                        </button>
+                        <span className="adjust-value">
+                          {subDelay > 0 ? "+" : ""}
+                          {subDelay.toFixed(1)} s
+                        </span>
+                        <button
+                          onClick={() =>
+                            send({ action: "adjustSubtitleDelay", seconds: SUB_DELAY_STEP })
+                          }
+                          aria-label="Show subtitles later"
+                        >
+                          +
+                        </button>
+                        <button
+                          className="reset"
+                          onClick={() => send({ action: "resetSubtitleDelay" })}
+                          disabled={subDelay === 0}
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    )}
                     <div className="adjust-row">
                       <span>Size</span>
                       <button
@@ -682,20 +780,24 @@ export default function Controls() {
                   onSelect: () => choose({ action: "setSubtitle", track: null, key: s.key }),
                 })),
               },
-              {
-                heading: "From this computer",
-                options: [
-                  {
-                    key: "file",
-                    label: "Load from file…",
-                    selected: false,
-                    onSelect: () => {
-                      setMenu(null);
-                      loadSubtitleFile().catch((e) => setToast(String(e)));
+              ...(isAndroid
+                ? []
+                : [
+                    {
+                      heading: "From this computer",
+                      options: [
+                        {
+                          key: "file",
+                          label: "Load from file…",
+                          selected: false,
+                          onSelect: () => {
+                            setMenu(null);
+                            loadSubtitleFile().catch((e) => setToast(String(e)));
+                          },
+                        },
+                      ],
                     },
-                  },
-                ],
-              },
+                  ]),
 
             ]}
           />
@@ -732,13 +834,26 @@ export default function Controls() {
               },
             ]}
           />
-          <button
-            className="icon"
-            onClick={() => send({ action: "toggleFullscreen" })}
-            aria-label="Fullscreen"
-          >
-            ⛶
-          </button>
+          {/* On Android there is no keyboard, and the player always fills the screen. */}
+          {!isAndroid && (
+            <>
+              <button
+                className="icon"
+                onClick={() => setHelp((shown) => !shown)}
+                aria-label="Keyboard shortcuts"
+                title="Keyboard shortcuts (?)"
+              >
+                ?
+              </button>
+              <button
+                className="icon"
+                onClick={() => send({ action: "toggleFullscreen" })}
+                aria-label="Fullscreen"
+              >
+                ⛶
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -748,4 +863,50 @@ export default function Controls() {
 /** The part of a track label before any details in brackets, to keep the bar short. */
 function shortLabel(label: string) {
   return label.replace(/\s*\(.*\)$/, "");
+}
+
+/**
+ * The mini player's controls: play or pause, back to full size, close, and a progress line.
+ * A double click also brings the video back to full size.
+ */
+function MiniControls({ state, paused }: { state: PlaybackState; paused: boolean }) {
+  const share = state.duration > 0 ? Math.min(1, state.position / state.duration) : 0;
+  return (
+    <div
+      className="mini"
+      onDoubleClick={(e) => {
+        if (e.target === e.currentTarget) send({ action: "setMini", on: false });
+      }}
+    >
+      <div className="mini-title">{state.title}</div>
+      <div className="mini-buttons">
+        <button
+          className="icon"
+          onClick={() => send({ action: "togglePause" })}
+          aria-label={paused ? "Play" : "Pause"}
+        >
+          {paused ? "▶" : "❚❚"}
+        </button>
+        <button
+          className="icon"
+          onClick={() => send({ action: "setMini", on: false })}
+          aria-label="Full size"
+          title="Back to full size"
+        >
+          ⤢
+        </button>
+        <button
+          className="icon"
+          onClick={() => send({ action: "close" })}
+          aria-label="Close player"
+          title="Close"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="mini-progress" aria-hidden="true">
+        <span style={{ width: `${share * 100}%` }} />
+      </div>
+    </div>
+  );
 }

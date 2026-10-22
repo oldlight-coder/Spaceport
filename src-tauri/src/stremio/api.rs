@@ -62,6 +62,15 @@ struct Envelope<T> {
     error: Option<ErrorBody>,
 }
 
+/// Times an addon request is repeated after a passing server error, and the pause before.
+const ADDON_RETRIES: u32 = 1;
+const ADDON_RETRY_PAUSE: Duration = Duration::from_millis(1500);
+
+/// Errors from a server's gateway or a server that is briefly overloaded, worth one more try.
+fn is_passing_error(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 502..=504)
+}
+
 /// Most redirects one request may follow.
 const MAX_REDIRECTS: usize = 5;
 
@@ -152,7 +161,7 @@ pub struct StremioApi {
 impl StremioApi {
     pub fn new(base_url: impl Into<String>) -> Self {
         // Some services (behind Cloudflare) refuse requests that do not name their client.
-        let http = reqwest::Client::builder()
+        let builder = reqwest::Client::builder()
             .user_agent(concat!("Spaceport/", env!("CARGO_PKG_VERSION")))
             // Addon URLs can hold debrid keys; a Referer would hand them to the next host.
             .referer(false)
@@ -166,9 +175,18 @@ impl StremioApi {
                     attempt.stop()
                 }
             }))
-            .timeout(Duration::from_secs(20))
-            .build()
-            .expect("failed to build HTTP client");
+            .timeout(Duration::from_secs(20));
+        #[cfg(target_os = "android")]
+        let builder = {
+            // rustls needs its crypto chosen once per process; the roots are Mozilla's, built in.
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            builder.tls_certs_only(
+                webpki_root_certs::TLS_SERVER_ROOT_CERTS
+                    .iter()
+                    .filter_map(|der| reqwest::Certificate::from_der(der).ok()),
+            )
+        };
+        let http = builder.build().expect("failed to build HTTP client");
         Self {
             http,
             base_url: base_url.into().trim_end_matches('/').to_string(),
@@ -253,15 +271,24 @@ impl StremioApi {
     /// GETs a JSON resource from an installed addon with its own timeout, so one slow addon
     /// cannot hold up the others.
     pub async fn addon_json(&self, url: &str, timeout: Duration) -> Result<Value, ApiError> {
-        let response = self
-            .http
-            .get(url)
-            .timeout(timeout)
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-            // Configured addon URLs can embed tokens, so keep the URL out of the message.
-            .map_err(|e| ApiError::Addon(format!("could not load the addon: {}", describe(e))))?;
+        let mut attempt = 0;
+        let response = loop {
+            let sent = self.http.get(url).timeout(timeout).send().await;
+            // A busy addon server often answers 502-504 once and fine a moment later.
+            if let Ok(r) = &sent {
+                if attempt < ADDON_RETRIES && is_passing_error(r.status()) {
+                    attempt += 1;
+                    tokio::time::sleep(ADDON_RETRY_PAUSE).await;
+                    continue;
+                }
+            }
+            break sent
+                .and_then(|r| r.error_for_status())
+                // Configured addon URLs can embed tokens, so keep the URL out of the message.
+                .map_err(|e| {
+                    ApiError::Addon(format!("could not load the addon: {}", describe(e)))
+                })?;
+        };
         response
             .json()
             .await
@@ -472,6 +499,51 @@ mod tests {
             &api,
             &url("http://api.strem.io/api/getUser")
         ));
+    }
+
+    /// Answers each connection with the next canned status, counting requests.
+    async fn flaky_addon(
+        statuses: Vec<u16>,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let count = std::sync::Arc::new(AtomicUsize::new(0));
+        let seen = count.clone();
+        tokio::spawn(async move {
+            for status in statuses {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut buf = [0u8; 2048];
+                let _ = socket.read(&mut buf).await;
+                seen.fetch_add(1, Ordering::SeqCst);
+                let body = if status == 200 { r#"{"metas":[]}"# } else { "" };
+                let reply = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(reply.as_bytes()).await;
+            }
+        });
+        (format!("http://{addr}/catalog/movie/top.json"), count)
+    }
+
+    #[tokio::test]
+    async fn retries_a_gateway_error_once() {
+        use std::sync::atomic::Ordering;
+        let api = StremioApi::new("http://127.0.0.1:1");
+        let (url, count) = flaky_addon(vec![504, 200]).await;
+        assert!(api.addon_json(&url, ADDON_TIMEOUT).await.is_ok());
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+
+        let (url, count) = flaky_addon(vec![504, 504, 200]).await;
+        let err = api.addon_json(&url, ADDON_TIMEOUT).await.unwrap_err();
+        assert!(err.to_string().contains("504"), "{err}");
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+
+        let (url, count) = flaky_addon(vec![404, 200]).await;
+        assert!(api.addon_json(&url, ADDON_TIMEOUT).await.is_err());
+        assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
     #[test]

@@ -1,17 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CatalogLayoutContext } from "../catalogLayout";
 import { logout, Session, User } from "../api/auth";
-import { getSettings, saveSettings, Settings } from "../api/settings";
+import { CatalogLayout, getSettings, saveSettings, Settings } from "../api/settings";
 import Avatar from "../components/Avatar";
 import SearchBox from "../components/SearchBox";
-import { OpenAddonsContext, OpenTitleContext, TitleRef } from "../navigation";
+import WindowControls from "../components/WindowControls";
+import { OpenAddonsContext, OpenTitleContext, SearchContext, TitleRef } from "../navigation";
 import { useOnline } from "../online";
 import { useForwardPlayerKeys, usePlayerBackdrop } from "../playerKeys";
+import AndroidPlayer from "../player/AndroidPlayer";
+import { isAndroid } from "../platform";
 import { applyTheme, cacheAppearance } from "../theme";
 import { NewEpisodesContext, useNewEpisodesLoader } from "../newEpisodes";
 import BoardScreen from "./BoardScreen";
 import DetailsScreen from "./DetailsScreen";
 import DiscoverScreen from "./DiscoverScreen";
 import LibraryScreen from "./LibraryScreen";
+import CalendarScreen from "./CalendarScreen";
 import SearchScreen from "./SearchScreen";
 import SettingsScreen from "./SettingsScreen";
 import { ListSkeleton } from "../components/Skeleton";
@@ -26,6 +31,7 @@ const PAGES = {
   movie: "Movies",
   series: "Series",
   anime: "Anime",
+  calendar: "Calendar",
   library: "Library",
 } as const;
 type Page = keyof typeof PAGES | "search" | "settings";
@@ -59,6 +65,17 @@ export default function HomeScreen({ user, onSession }: Props) {
   async function updateSettings(next: Settings) {
     setSettings(await saveSettings(next));
   }
+
+  // The row layout is saved into the newest settings, not a copy from an earlier render.
+  const latestSettings = useRef(settings);
+  latestSettings.current = settings;
+  const catalogLayout = {
+    layout: settings?.catalogLayout,
+    save: async (layout: CatalogLayout) => {
+      const current = latestSettings.current;
+      if (current) await updateSettings({ ...current, catalogLayout: layout });
+    },
+  };
 
   function go(next: Page) {
     setPage(next);
@@ -99,11 +116,18 @@ export default function HomeScreen({ user, onSession }: Props) {
   return (
     <OpenTitleContext.Provider value={openTitle}>
       <OpenAddonsContext.Provider value={openAddons}>
+      <SearchContext.Provider value={search}>
+      <CatalogLayoutContext.Provider value={catalogLayout}>
         <NewEpisodesContext.Provider value={newEpisodes}>
+          {isAndroid && <AndroidPlayer />}
           <div className="app">
-            <header className="topbar">
-              <span className="brand">Spaceport</span>
-              <nav className="tabs">
+            {/* The window has no Windows title bar: the top bar moves it (drag, or double-click
+                to maximize) and holds the window buttons. */}
+            <header className="topbar" data-tauri-drag-region>
+              <span className="brand" data-tauri-drag-region>
+                Spaceport
+              </span>
+              <nav className="tabs" data-tauri-drag-region>
                 {(Object.keys(PAGES) as (keyof typeof PAGES)[]).map((key) => (
                   <button
                     key={key}
@@ -129,6 +153,7 @@ export default function HomeScreen({ user, onSession }: Props) {
                   />
                 </svg>
               </button>
+              <WindowControls />
             </header>
             {!online && (
               <div className="offline-banner" role="status">
@@ -150,6 +175,7 @@ export default function HomeScreen({ user, onSession }: Props) {
                 <DiscoverScreen key={page} type={page} title={PAGES[page]} />
               )}
               {page === "library" && <LibraryScreen />}
+              {page === "calendar" && <CalendarScreen />}
               {page === "search" && <SearchScreen query={query} />}
               {page === "settings" &&
                 (settings ? (
@@ -166,6 +192,8 @@ export default function HomeScreen({ user, onSession }: Props) {
             </main>
           </div>
         </NewEpisodesContext.Provider>
+      </CatalogLayoutContext.Provider>
+      </SearchContext.Provider>
       </OpenAddonsContext.Provider>
     </OpenTitleContext.Provider>
   );

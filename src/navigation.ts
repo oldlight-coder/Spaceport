@@ -11,6 +11,11 @@ export const OpenTitleContext = createContext<(title: TitleRef) => void>(() => {
 
 export const useOpenTitle = () => useContext(OpenTitleContext);
 
+/** Searches all addons for a term, as if typed in the search box (cast and director names). */
+export const SearchContext = createContext<(term: string) => void>(() => {});
+
+export const useSearch = () => useContext(SearchContext);
+
 /** Opens the settings page at its Addons section, for empty states that need an addon. */
 export const OpenAddonsContext = createContext<() => void>(() => {});
 
