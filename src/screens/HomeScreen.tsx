@@ -4,6 +4,7 @@ import { logout, Session, User } from "../api/auth";
 import { CatalogLayout, getSettings, saveSettings, Settings } from "../api/settings";
 import Avatar from "../components/Avatar";
 import SearchBox from "../components/SearchBox";
+import WindowControls from "../components/WindowControls";
 import { OpenAddonsContext, OpenTitleContext, SearchContext, TitleRef } from "../navigation";
 import { useOnline } from "../online";
 import { useForwardPlayerKeys, usePlayerBackdrop } from "../playerKeys";
@@ -117,9 +118,13 @@ export default function HomeScreen({ user, onSession }: Props) {
       <CatalogLayoutContext.Provider value={catalogLayout}>
         <NewEpisodesContext.Provider value={newEpisodes}>
           <div className="app">
-            <header className="topbar">
-              <span className="brand">Spaceport</span>
-              <nav className="tabs">
+            {/* The window has no Windows title bar: the top bar moves it (drag, or double-click
+                to maximize) and holds the window buttons. */}
+            <header className="topbar" data-tauri-drag-region>
+              <span className="brand" data-tauri-drag-region>
+                Spaceport
+              </span>
+              <nav className="tabs" data-tauri-drag-region>
                 {(Object.keys(PAGES) as (keyof typeof PAGES)[]).map((key) => (
                   <button
                     key={key}
@@ -145,6 +150,7 @@ export default function HomeScreen({ user, onSession }: Props) {
                   />
                 </svg>
               </button>
+              <WindowControls />
             </header>
             {!online && (
               <div className="offline-banner" role="status">

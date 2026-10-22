@@ -358,3 +358,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
   window's bottom-right corner (layout.rs, unit-tested); the page is sharp and usable, keys go
   to it, and the box has play/pause, full size (also double-click or Esc) and close. Starting
   another video from the page, or fullscreen, brings it back to full size.
+- 2026-10-22: Windows title bar replaced by Spaceport's own (owner's request): the top bar moves the window (drag, double-click to maximize) and has minimize, maximize/restore and close; sign-in and start-up screens get a slim bar with the same buttons. Only the main window may use these window permissions.

@@ -1700,3 +1700,61 @@ button.person-link:hover:not(:disabled) {
 .row-failed .text-button {
   font-size: 13px;
 }
+
+/* Spaceport's own window buttons (the Windows title bar is turned off). */
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  margin: -10px -24px -10px 0;
+}
+
+.window-controls button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--md-on-surface);
+}
+
+.window-controls button:hover:not(:disabled) {
+  box-shadow: none;
+  background: var(--hover);
+}
+
+.window-controls button.close:hover:not(:disabled) {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.window-controls svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+.title-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 0 0 16px;
+  background: var(--md-surface-container);
+}
+
+.title-bar .brand {
+  flex: 1;
+  font-size: 13px;
+}
+
+.title-bar .window-controls {
+  margin: 0;
+}
