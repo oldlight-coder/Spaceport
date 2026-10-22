@@ -87,7 +87,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - **Acceptance:** misspelled titles such as "breakng bad" or "the mandolorian" are found.
 
 ## M12. Library entries
-- [ ] Add to / remove from the Stremio library on a title's page; remove from Library posters
+- [x] Add to / remove from the Stremio library on a title's page; remove from Library posters
 - **Acceptance:** a title added here shows in the official Stremio app's library, and one removed
   here leaves it, with its watch progress kept.
 
@@ -306,3 +306,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-22: M12 implemented (not yet ticked: needs a Windows check): library_status and
   library_set commands, "+ Add to library" / "✓ In library" on the title page, a remove button on
   Library posters, and the Library refreshing after changes. Unit test for the flags.
+- 2026-10-22: M12 accepted by the owner on Windows; ticked.
