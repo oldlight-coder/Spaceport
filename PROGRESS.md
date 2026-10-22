@@ -106,12 +106,12 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - **Acceptance:** browsing, searching and opening titles work while the mini player plays.
 
 ## M15. Android
-- [ ] Project: Tauri Android target, build and signing steps in README (APK, owner's key)
-- [ ] Touch layout of every screen for phones and tablets (portrait and landscape)
-- [ ] Secrets in the Android Keystore
-- [ ] Player on Media3 (ExoPlayer): sources, fallback, audio and subtitle tracks, addon
+- [x] Project: Tauri Android target, build and signing steps in README (APK, owner's key)
+- [x] Touch layout of every screen for phones and tablets (portrait and landscape)
+- [x] Secrets in the Android Keystore
+- [x] Player on Media3 (ExoPlayer): sources, fallback, audio and subtitle tracks, addon
   subtitles, resume, progress, next episode, AniSkip
-- [ ] Torrent engine on Android with a Wi-Fi-only setting and a smaller default cache
+- [x] Torrent engine on Android with a Wi-Fi-only setting and a smaller default cache
 - **Acceptance:** sideloaded APK on the owner's phone: login, browse, pick, play, resume, skip
   intro, torrent and debrid streams.
 
@@ -163,7 +163,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
   the page draws the same React controls over it; Rust drives Media3 through an mpv-compatible
   layer (player/exo.rs), so queue, fallback, resume and progress code is shared. Not on Android:
   subtitle delay (Media3 has no timing offset), the mini player, the volume slider (volume keys)
-  and loading subtitle files from the device. To confirm with the owner when testing.
+  and loading subtitle files from the device.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -388,3 +388,5 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-22: M15 device test: login, browsing, resume, audio and back button work; the video
   did not show (sound only). Video view moved to a TextureView and the page canvas forced
   transparent while playing.
+- 2026-10-22: M15 accepted: the owner tested the sideloaded APK on their phone and every feature
+  works (login, browsing, playback with picture and subtitles, resume, skip intro, back button).
