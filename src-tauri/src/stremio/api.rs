@@ -161,7 +161,7 @@ pub struct StremioApi {
 impl StremioApi {
     pub fn new(base_url: impl Into<String>) -> Self {
         // Some services (behind Cloudflare) refuse requests that do not name their client.
-        let http = reqwest::Client::builder()
+        let builder = reqwest::Client::builder()
             .user_agent(concat!("Spaceport/", env!("CARGO_PKG_VERSION")))
             // Addon URLs can hold debrid keys; a Referer would hand them to the next host.
             .referer(false)
@@ -175,9 +175,18 @@ impl StremioApi {
                     attempt.stop()
                 }
             }))
-            .timeout(Duration::from_secs(20))
-            .build()
-            .expect("failed to build HTTP client");
+            .timeout(Duration::from_secs(20));
+        #[cfg(target_os = "android")]
+        let builder = {
+            // rustls needs its crypto chosen once per process; the roots are Mozilla's, built in.
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            builder.tls_certs_only(
+                webpki_root_certs::TLS_SERVER_ROOT_CERTS
+                    .iter()
+                    .filter_map(|der| reqwest::Certificate::from_der(der).ok()),
+            )
+        };
+        let http = builder.build().expect("failed to build HTTP client");
         Self {
             http,
             base_url: base_url.into().trim_end_matches('/').to_string(),

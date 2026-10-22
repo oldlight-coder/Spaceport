@@ -362,3 +362,9 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-22: Window buttons highlight only their icon on hover (accent colour; red for close), per the owner.
 - 2026-10-22: Window button hover is now white (the text colour) on dimmed resting icons; close stays red.
 - 2026-10-22: M14 accepted by the owner on Windows; ticked.
+- 2026-10-22: M15 step 1 (owner approved a GitHub Actions build): Tauri Android project in
+  src-tauri/gen/android (no TV launcher; plain http allowed, for the 127.0.0.1 torrent server
+  and http addons), HTTPS on Android through rustls + ring with Mozilla's root certificates
+  (Windows keeps its system TLS), the libmpv pin check only for Windows builds, and a workflow
+  that builds a debug arm64 APK and validates the Gradle wrapper. The Gradle distribution's
+  SHA-256 gets pinned from the checksum Gradle publishes (printed by the workflow).

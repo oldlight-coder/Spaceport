@@ -116,6 +116,12 @@ async function main() {
     fail("no libmpv build is pinned yet; run `pnpm run setup -- --pin` once and commit the result");
   }
 
+  if (args[0] === "--check" && (process.env.TAURI_ENV_PLATFORM ?? "windows") !== "windows") {
+    // Only the Windows installer ships libmpv; other builds (Android) do not use it.
+    console.log(`setup: ${process.env.TAURI_ENV_PLATFORM} build, libmpv is not bundled`);
+    return;
+  }
+
   if (args[0] === "--check") {
     if (!dllMatches(pinned)) {
       fail(`${dllName} in src-tauri/lib is missing or not the pinned build; run \`pnpm run setup\``);
