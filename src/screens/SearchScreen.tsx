@@ -94,5 +94,5 @@ interface SearchRowProps {
 function SearchRow({ catalog, extra, onLoaded }: SearchRowProps) {
   const key = rowKey(catalog);
   const report = useCallback((count: number) => onLoaded(key, count), [key, onLoaded]);
-  return <CatalogRow catalog={catalog} extra={extra} onLoaded={report} />;
+  return <CatalogRow catalog={catalog} extra={extra} onLoaded={report} quietErrors />;
 }

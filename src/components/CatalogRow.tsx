@@ -9,10 +9,12 @@ interface Props {
   extra?: [string, string][];
   /** Called with the number of titles once the row has loaded (0 on error). */
   onLoaded?: (count: number) => void;
+  /** A failed row is one quiet line instead of a heading and an error (search results). */
+  quietErrors?: boolean;
 }
 
 /** One horizontally scrolling row of a catalog. Rows with no titles are not shown. */
-export default function CatalogRow({ catalog, extra, onLoaded }: Props) {
+export default function CatalogRow({ catalog, extra, onLoaded, quietErrors }: Props) {
   const load = useCallback(() => fetchCatalog(catalog, extra), [catalog, extra]);
   const [metas, reload] = useLoad(load);
 
@@ -22,6 +24,17 @@ export default function CatalogRow({ catalog, extra, onLoaded }: Props) {
   }, [metas, onLoaded]);
 
   if (metas.status === "ready" && metas.data.length === 0) return null;
+  if (metas.status === "error" && quietErrors) {
+    const reason = metas.message.replace(/^could not load the addon: /, "");
+    return (
+      <p className="muted small row-failed">
+        {catalog.addonName} ({typeLabel(catalog.type)}) did not answer: {reason}.{" "}
+        <button className="text-button" onClick={reload}>
+          Try again
+        </button>
+      </p>
+    );
+  }
 
   return (
     <section className="row">

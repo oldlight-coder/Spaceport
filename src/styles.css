@@ -1692,3 +1692,11 @@ button.person-link:hover:not(:disabled) {
   color: var(--accent);
   text-decoration-color: currentColor;
 }
+
+.row-failed {
+  margin: -12px 0 0;
+}
+
+.row-failed .text-button {
+  font-size: 13px;
+}

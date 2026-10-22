@@ -349,3 +349,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-22: M13 (not yet ticked): "More like this" row on title pages (same type and first
   genre from a catalog that filters by genre, the title's own addon first) and cast and
   director names that search all addons. M13 code complete.
+- 2026-10-22: Addon requests are retried once, 1.5 s later, after a 502-504 answer (the owner hit
+  504s from Cinemeta and TMDB searching a cast name); failed search rows show one quiet line
+  with "Try again" instead of a heading and a red error.
