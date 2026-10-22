@@ -4,3 +4,6 @@ src-tauri/target/
 src-tauri/gen/schemas/
 *.log
 src-tauri/lib/
+# Android signing keys stay on the owner's computer.
+*.jks
+*.keystore

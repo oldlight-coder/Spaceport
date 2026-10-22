@@ -43,4 +43,7 @@ is not.
   digest GitHub publishes for the release asset, records the archive and DLL hashes in
   `scripts/libmpv.json`; commit it.
 - Installer: `src-tauri/target/release/bundle/nsis/Spaceport_<version>_x64-setup.exe`.
+- Android: see README "Build (Android)"; `pnpm tauri android build --apk --target aarch64`,
+  signed with the owner's key from `src-tauri/gen/android/keystore.properties` (never committed).
+  The GitHub Actions workflow builds a debug APK on every push.
 - Keep this section and `README.md` accurate whenever setup changes.

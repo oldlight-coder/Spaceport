@@ -33,6 +33,50 @@ publishes for the asset and writes its name and hash, and the DLL's hash, to
 The shinchiro builds are GPL-licensed; Spaceport loads the DLL at runtime and is meant for personal
 use.
 
+## Build (Android)
+
+Prerequisites, in addition to Node 22 + pnpm and Rust: Android Studio (it installs the Android
+SDK; add the NDK and the SDK command-line tools in its SDK Manager), JDK 17, and the Rust
+Android target:
+
+```
+rustup target add aarch64-linux-android
+```
+
+Set `ANDROID_HOME` to the SDK folder and `NDK_HOME` to the NDK folder inside it (for example
+`%LOCALAPPDATA%\Android\Sdk\ndk\<version>`), then:
+
+```
+pnpm install
+pnpm tauri android build --apk --target aarch64
+```
+
+The APK is written to `src-tauri/gen/android/app/build/outputs/apk/universal/release/`.
+
+Release APKs are signed with your own key. Create one once (keep it and its passwords safe; an
+app signed with a new key cannot update the old one):
+
+```
+keytool -genkey -v -keystore spaceport.jks -keyalg RSA -keysize 4096 -validity 10000 -alias spaceport
+```
+
+and put `src-tauri/gen/android/keystore.properties` next to it (git ignores both):
+
+```
+storeFile=C:/path/to/spaceport.jks
+storePassword=...
+keyAlias=spaceport
+keyPassword=...
+```
+
+Install on a phone with USB debugging on: `adb install -r <the .apk>`, or copy the APK to the
+phone and open it (allow installing from that app when Android asks).
+
+Gradle, which Android builds use, is downloaded by its wrapper and checked against the pinned
+SHA-256 in `src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties`. A GitHub Actions
+workflow (`.github/workflows/android.yml`) also builds a debug APK on every push and keeps it
+as a download for 14 days.
+
 ## Development
 
 ```
