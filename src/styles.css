@@ -1599,3 +1599,79 @@ button.visibility.on {
 .reset-layout {
   align-self: flex-start;
 }
+
+.calendar-note {
+  margin: -8px 0 16px;
+}
+
+.calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 900px;
+}
+
+.calendar-day h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.calendar-day.today h3 {
+  color: var(--accent);
+}
+
+.calendar-day ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+button.calendar-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 8px;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+}
+
+.calendar-entry img,
+.calendar-thumb {
+  flex: none;
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-s);
+  object-fit: cover;
+  background: var(--surface-high);
+}
+
+.calendar-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.calendar-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.calendar-text .muted {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.calendar-day + .calendar-day {
+  margin-top: 0;
+}

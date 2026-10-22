@@ -343,3 +343,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   with episode and day; from the Stremio library, including removed titles); "Edit rows" on
   Home and "Edit catalogs" on Movies/Series/Anime to reorder and hide, saved per page in
   settings.json by addon id and catalog id (never by link).
+- 2026-10-22: M13 (not yet ticked): Calendar tab with the followed series' episodes from a
+  week back to two months ahead, grouped by day ("New" and "Upcoming" tags); shares the
+  followed-series lookup and 3 h details cache with the new-episode check.

@@ -392,13 +392,20 @@ struct TrackedTitle {
 /// How long fetched series details are reused by the new-episode check.
 const META_CACHE: std::time::Duration = std::time::Duration::from_secs(3 * 60 * 60);
 
-/// New episodes of the series in the library, in Continue Watching and marked as watching, by
-/// title id. Titles without new episodes are left out, as are ones whose details failed.
-#[tauri::command]
-async fn new_episodes(
-    state: tauri::State<'_, AppState>,
+/// A series followed for new episodes and the calendar, with its details.
+struct FollowedSeries {
+    id: String,
+    item: Option<Value>,
+    since: Option<i64>,
+    meta: MetaDetails,
+}
+
+/// The series in the library, in Continue Watching and marked as watching, with their
+/// details. Series whose details cannot be fetched are left out.
+async fn followed_series(
+    state: &AppState,
     tracked: Vec<TrackedTitle>,
-) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+) -> Result<Vec<FollowedSeries>, String> {
     let key = state.auth_key()?;
     let items = state
         .api
@@ -426,41 +433,80 @@ async fn new_episodes(
             }
         }
     }
-    let now = progress::now_millis();
     let mut found = Vec::new();
     // A few at a time, so a big library does not flood the metadata addons.
     for batch in titles.chunks(6) {
-        let checks = batch.iter().map(|(id, kind, item, since)| {
-            let state = &*state;
-            async move {
-                let cached = state
-                    .metas
-                    .lock()
-                    .unwrap()
-                    .get(id)
-                    .filter(|(at, _)| at.elapsed() < META_CACHE)
-                    .map(|(_, meta)| meta.clone());
-                let meta = match cached {
-                    Some(meta) => meta,
-                    None => {
-                        let meta = fetch_meta(state, kind, id, None).await.ok()?;
-                        let entry = (std::time::Instant::now(), meta.clone());
-                        state.metas.lock().unwrap().insert(id.clone(), entry);
-                        meta
-                    }
-                };
-                let new = new_episodes::new_episodes(&meta, item.as_ref(), *since, now);
-                (!new.is_empty()).then(|| (id.clone(), new))
-            }
+        let lookups = batch.iter().map(|(id, kind, item, since)| async move {
+            let cached = state
+                .metas
+                .lock()
+                .unwrap()
+                .get(id)
+                .filter(|(at, _)| at.elapsed() < META_CACHE)
+                .map(|(_, meta)| meta.clone());
+            let meta = match cached {
+                Some(meta) => meta,
+                None => {
+                    let meta = fetch_meta(state, kind, id, None).await.ok()?;
+                    let entry = (std::time::Instant::now(), meta.clone());
+                    state.metas.lock().unwrap().insert(id.clone(), entry);
+                    meta
+                }
+            };
+            Some(FollowedSeries {
+                id: id.clone(),
+                item: item.clone(),
+                since: *since,
+                meta,
+            })
         });
         found.extend(
-            futures_util::future::join_all(checks)
+            futures_util::future::join_all(lookups)
                 .await
                 .into_iter()
                 .flatten(),
         );
     }
-    Ok(found.into_iter().collect())
+    Ok(found)
+}
+
+/// New episodes of the series in the library, in Continue Watching and marked as watching, by
+/// title id. Titles without new episodes are left out, as are ones whose details failed.
+#[tauri::command]
+async fn new_episodes(
+    state: tauri::State<'_, AppState>,
+    tracked: Vec<TrackedTitle>,
+) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    let now = progress::now_millis();
+    Ok(followed_series(&state, tracked)
+        .await?
+        .into_iter()
+        .filter_map(|s| {
+            let new = new_episodes::new_episodes(&s.meta, s.item.as_ref(), s.since, now);
+            (!new.is_empty()).then_some((s.id, new))
+        })
+        .collect())
+}
+
+/// Episodes of the followed series released in the last week or coming in the next two
+/// months, by release date.
+#[tauri::command]
+async fn calendar(
+    state: tauri::State<'_, AppState>,
+    tracked: Vec<TrackedTitle>,
+) -> Result<Vec<new_episodes::CalendarEntry>, String> {
+    let now = progress::now_millis();
+    let mut entries: Vec<new_episodes::CalendarEntry> = followed_series(&state, tracked)
+        .await?
+        .iter()
+        .flat_map(|s| new_episodes::calendar_entries(&s.meta, now))
+        .collect();
+    entries.sort_by(|a, b| {
+        a.released
+            .cmp(&b.released)
+            .then(a.series_name.cmp(&b.series_name))
+    });
+    Ok(entries)
 }
 
 /// A title's details from the first addon that has them; `preferred` is tried first.
@@ -1131,6 +1177,7 @@ pub fn run() {
             watch_history,
             library_set,
             new_episodes,
+            calendar,
             search_assist,
             title_progress,
             watched_get,

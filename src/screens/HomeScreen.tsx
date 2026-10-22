@@ -13,6 +13,7 @@ import BoardScreen from "./BoardScreen";
 import DetailsScreen from "./DetailsScreen";
 import DiscoverScreen from "./DiscoverScreen";
 import LibraryScreen from "./LibraryScreen";
+import CalendarScreen from "./CalendarScreen";
 import SearchScreen from "./SearchScreen";
 import SettingsScreen from "./SettingsScreen";
 import { ListSkeleton } from "../components/Skeleton";
@@ -27,6 +28,7 @@ const PAGES = {
   movie: "Movies",
   series: "Series",
   anime: "Anime",
+  calendar: "Calendar",
   library: "Library",
 } as const;
 type Page = keyof typeof PAGES | "search" | "settings";
@@ -163,6 +165,7 @@ export default function HomeScreen({ user, onSession }: Props) {
                 <DiscoverScreen key={page} type={page} title={PAGES[page]} />
               )}
               {page === "library" && <LibraryScreen />}
+              {page === "calendar" && <CalendarScreen />}
               {page === "search" && <SearchScreen query={query} />}
               {page === "settings" &&
                 (settings ? (

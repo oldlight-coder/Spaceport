@@ -5,6 +5,7 @@
 //! title only marked as watching on this computer it is the time of the mark. Specials
 //! (season 0) are left out.
 
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::progress::parse_iso_millis;
@@ -46,6 +47,59 @@ pub fn new_episodes(
             released.is_some_and(|r| r > since && r <= now) && !seen(&ep.id)
         })
         .map(|ep| ep.id.clone())
+        .collect()
+}
+
+/// The calendar shows a week back and two months ahead.
+const CALENDAR_PAST_DAYS: i64 = 7;
+const CALENDAR_FUTURE_DAYS: i64 = 60;
+const DAY_MS: i64 = 86_400_000;
+
+/// One episode on the calendar.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarEntry {
+    pub series_id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub series_name: String,
+    pub poster: Option<String>,
+    pub video_id: String,
+    pub season: u32,
+    pub episode: Option<u32>,
+    pub title: String,
+    pub thumbnail: Option<String>,
+    /// As the addon gives it (ISO 8601).
+    pub released: String,
+}
+
+/// The series' episodes released from a week before `now` to two months after, specials
+/// left out.
+pub fn calendar_entries(meta: &MetaDetails, now: i64) -> Vec<CalendarEntry> {
+    let (from, to) = (
+        now - CALENDAR_PAST_DAYS * DAY_MS,
+        now + CALENDAR_FUTURE_DAYS * DAY_MS,
+    );
+    meta.seasons
+        .iter()
+        .filter(|s| s.number > 0)
+        .flat_map(|s| s.episodes.iter().map(move |ep| (s.number, ep)))
+        .filter_map(|(season, ep)| {
+            let released = ep.released.as_deref()?;
+            let at = parse_iso_millis(released)?;
+            (from..=to).contains(&at).then(|| CalendarEntry {
+                series_id: meta.id.clone(),
+                kind: meta.kind.clone(),
+                series_name: meta.name.clone(),
+                poster: meta.poster.clone(),
+                video_id: ep.id.clone(),
+                season,
+                episode: ep.episode,
+                title: ep.title.clone(),
+                thumbnail: ep.thumbnail.clone(),
+                released: released.to_string(),
+            })
+        })
         .collect()
 }
 
@@ -103,6 +157,28 @@ mod tests {
         // Stremio's last watch wins over the mark.
         let item = json!({"state": {"lastWatched": "2026-10-16T00:00:00.000Z"}});
         assert!(new_episodes(&show(), Some(&item), Some(since), ms(NOW)).is_empty());
+    }
+
+    #[test]
+    fn calendar_spans_a_week_back_and_two_months_ahead() {
+        let mut meta = show();
+        meta.seasons[1]
+            .episodes
+            .push(crate::stremio::meta::Episode {
+                id: "tt1:1:5".into(),
+                title: "Far".into(),
+                season: Some(1),
+                episode: Some(5),
+                released: Some("2027-03-01T00:00:00.000Z".into()),
+                thumbnail: None,
+                overview: None,
+            });
+        let ids: Vec<String> = calendar_entries(&meta, ms(NOW))
+            .into_iter()
+            .map(|e| e.video_id)
+            .collect();
+        // E2 (Oct 8) is more than a week ago, the special is left out, E5 is too far ahead.
+        assert_eq!(ids, ["tt1:1:3", "tt1:1:4"]);
     }
 
     #[test]
