@@ -1,6 +1,7 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { onPlayerEvent, PLAY_NEXT_EVENT, PLAYER_KEY_EVENT } from "../api/player";
+import { getSettings } from "../api/settings";
 import { formatTime } from "../format";
 import {
   control,
@@ -19,6 +20,19 @@ const NEXT_UP_BEFORE_END = 30;
 const NEXT_UP_COUNTDOWN = 10;
 const SKIP_SECONDS = 10;
 const SUB_DELAY_STEP = 0.1;
+
+/** The keys the player answers to, for the help shown on "?". */
+const SHORTCUTS: [string, string][] = [
+  ["Space or K", "Play / pause"],
+  ["← or J", `Back ${SKIP_SECONDS} seconds`],
+  ["→ or L", `Forward ${SKIP_SECONDS} seconds`],
+  ["↑ / ↓", "Volume up / down"],
+  ["M", "Mute"],
+  ["F or double-click", "Fullscreen"],
+  ["Z / X", "Subtitles earlier / later"],
+  ["Esc", "Leave fullscreen, then close the player"],
+  ["?", "Show or hide this list"],
+];
 const SUB_SCALE_STEP = 0.1;
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 /** A seek counts as done once playback is this close to the target, in seconds. */
@@ -115,11 +129,18 @@ function useNextUp(state: PlaybackState | null) {
   const [requested, setRequested] = useState(false);
   const title = state?.title;
 
+  // Whether the countdown starts the next episode by itself (Settings > Playback), read again
+  // for every video so a change applies from the next one.
+  const [auto, setAuto] = useState(true);
+
   // A new video starts with a fresh countdown.
   useEffect(() => {
     setCancelled(false);
     setShownAt(null);
     setRequested(false);
+    getSettings()
+      .then((s) => setAuto(s.autoPlayNext ?? true))
+      .catch(() => {});
   }, [title]);
 
   const remaining = state ? state.duration - state.position : Infinity;
@@ -155,7 +176,9 @@ function useNextUp(state: PlaybackState | null) {
 
   const elapsed = shownAt == null ? 0 : Math.max(0, now - shownAt);
   const secondsLeft =
-    shownAt == null ? null : Math.max(0, NEXT_UP_COUNTDOWN - Math.floor(elapsed / 1000));
+    shownAt == null || !auto
+      ? null
+      : Math.max(0, NEXT_UP_COUNTDOWN - Math.floor(elapsed / 1000));
 
   useEffect(() => {
     if (secondsLeft === 0) playNext();
@@ -164,15 +187,16 @@ function useNextUp(state: PlaybackState | null) {
   // The episode ended before the countdown did.
   useEffect(() => {
     const stop = onPlayerEvent((event) => {
-      if (event.kind === "ended" && state?.nextUp && !cancelled) playNext();
+      if (event.kind === "ended" && state?.nextUp && !cancelled && auto) playNext();
     });
     return () => {
       stop.then((unlisten) => unlisten());
     };
-  }, [state?.nextUp, cancelled, playNext]);
+  }, [state?.nextUp, cancelled, playNext, auto]);
 
   return {
     label: state?.nextUp ?? null,
+    shown: shownAt != null,
     secondsLeft,
     playNext,
     cancel: () => {
@@ -226,6 +250,7 @@ export default function Controls() {
   const [idle, setIdle] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuName | null>(null);
+  const [help, setHelp] = useState(false);
   // While the seek bar is dragged, show the dragged position instead of the playing one.
   const [dragging, setDragging] = useState<number | null>(null);
   // After a seek, keep showing the target until playback gets there: seeking into a part that
@@ -311,13 +336,13 @@ export default function Controls() {
   }, []);
 
   useEffect(() => {
-    if (paused || menu) {
+    if (paused || menu || help) {
       window.clearTimeout(hideTimer.current);
       setIdle(false);
     } else {
       wake();
     }
-  }, [paused, menu, wake]);
+  }, [paused, menu, help, wake]);
 
   // Keys pressed here or forwarded by the main window (PLAYER_KEY_EVENT). Returns whether the
   // key did something.
@@ -356,8 +381,12 @@ export default function Controls() {
         case "x":
           send({ action: "adjustSubtitleDelay", seconds: SUB_DELAY_STEP });
           break;
+        case "?":
+          setHelp((shown) => !shown);
+          break;
         case "Escape":
-          if (menu) setMenu(null);
+          if (help) setHelp(false);
+          else if (menu) setMenu(null);
           else send({ action: "back" });
           break;
         default:
@@ -365,7 +394,7 @@ export default function Controls() {
       }
       return true;
     },
-    [state?.volume, wake, skip, menu],
+    [state?.volume, wake, skip, menu, help],
   );
 
   // Registered once: the state changes four times a second, and re-registering the forwarded
@@ -461,16 +490,36 @@ export default function Controls() {
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {help && (
+        <div className="shortcut-help" role="dialog" aria-label="Keyboard shortcuts">
+          <div className="shortcut-head">
+            <strong>Keyboard shortcuts</strong>
+            <button className="icon" onClick={() => setHelp(false)} aria-label="Close">
+              ✕
+            </button>
+          </div>
+          <dl>
+            {SHORTCUTS.map(([keys, action]) => (
+              <div key={keys}>
+                <dt>{keys}</dt>
+                <dd>{action}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
       {/* Near the end the next-episode card takes this place and offers Play now instead. */}
-      {skipSegment && nextUp.secondsLeft == null && (
+      {skipSegment && !nextUp.shown && (
         <button className="skip-button" onClick={skipSegment.skip}>
           {skipSegment.label} ⏭
         </button>
       )}
-      {nextUp.secondsLeft != null && nextUp.label && (
+      {nextUp.shown && nextUp.label && (
         <div className="next-up" role="status">
           <div className="next-up-label">
-            <span className="muted">Next episode in {nextUp.secondsLeft}</span>
+            <span className="muted">
+              {nextUp.secondsLeft != null ? `Next episode in ${nextUp.secondsLeft}` : "Up next"}
+            </span>
             <strong>{nextUp.label}</strong>
           </div>
           <div className="next-up-actions">
@@ -732,6 +781,14 @@ export default function Controls() {
               },
             ]}
           />
+          <button
+            className="icon"
+            onClick={() => setHelp((shown) => !shown)}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+          >
+            ?
+          </button>
           <button
             className="icon"
             onClick={() => send({ action: "toggleFullscreen" })}

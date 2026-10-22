@@ -288,6 +288,24 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
       </section>
 
       <section className="settings-section">
+        <h2>Playback</h2>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={settings.autoPlayNext}
+            onChange={(e) => update({ autoPlayNext: e.target.checked })}
+          />
+          <span>
+            <strong>Play the next episode automatically</strong>
+            <span className="muted small">
+              Near the end of an episode a countdown starts the next one. When off, the next
+              episode is offered with a Play button instead.
+            </span>
+          </span>
+        </label>
+      </section>
+
+      <section className="settings-section">
         <h2>Anime</h2>
         <label className="toggle">
           <input

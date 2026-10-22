@@ -28,6 +28,8 @@ export interface Settings {
   subtitleStyle: SubtitleStyle;
   /** Skip anime intros, outros and recaps without asking. */
   animeAutoSkip: boolean;
+  /** Start the next episode when the countdown runs out. */
+  autoPlayNext: boolean;
   appearance: Appearance;
 }
 

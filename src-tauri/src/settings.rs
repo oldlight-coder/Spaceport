@@ -137,6 +137,8 @@ pub struct Settings {
     pub subtitle_style: SubtitleStyle,
     /// Skip anime intros, outros and recaps automatically (AniSkip times).
     pub anime_auto_skip: bool,
+    /// Start the next episode when the countdown near the end runs out.
+    pub auto_play_next: bool,
     pub appearance: Appearance,
 }
 
@@ -152,6 +154,7 @@ impl Default for Settings {
             torrent_cache_gb: 10,
             subtitle_style: SubtitleStyle::default(),
             anime_auto_skip: false,
+            auto_play_next: true,
             appearance: Appearance::default(),
         }
     }

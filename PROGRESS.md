@@ -96,8 +96,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [ ] Home row editor (order and hide rows; catalogs on Movies/Series/Anime)
 - [ ] Watch history
 - [ ] "More like this" and searchable cast and directors on the title page
-- [ ] Auto-play next episode switch in Settings
-- [ ] Shortcut help on "?" in the player
+- [x] Auto-play next episode switch in Settings
+- [x] Shortcut help on "?" in the player
 - **Acceptance:** each works in the Windows app.
 
 ## M14. Mini player
@@ -336,3 +336,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   library_set commands, "+ Add to library" / "✓ In library" on the title page, a remove button on
   Library posters, and the Library refreshing after changes. Unit test for the flags.
 - 2026-10-22: M12 accepted by the owner on Windows; ticked.
+- 2026-10-22: M13: Settings > Playback switch for auto-playing the next episode (off shows an
+  "Up next" card with a Play button and no countdown); "?" key and button show the player's
+  keyboard shortcuts.
