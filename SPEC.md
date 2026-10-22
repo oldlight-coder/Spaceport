@@ -68,7 +68,22 @@ or hosted services of its own.
 - Look: Material You (Material 3) styling with a chosen accent color, light, dark or follow the
   system theme, styled scrollbars, smooth scrolling and skeleton loading placeholders.
 
-## 9. Technology
+## 9. Additions agreed with the owner (2026-10-22)
+- Calendar: upcoming (and just released) episodes of series in the library, Continue Watching
+  or marked Watching, by date.
+- Home row editor: reorder and hide catalog rows on Home and catalogs on the Movies, Series and
+  Anime pages.
+- Watch history: every title played, newest first, with when and which episode.
+- Title page: "More like this" (same genre, from the title's own addon) and cast and director
+  names that search for their titles.
+- Mini player: shrink the playing video to a corner and keep browsing.
+- Settings switch to turn off auto-playing the next episode.
+- Player shortcut help on "?".
+- Android version for phones and tablets, sideloaded APK signed with the owner's key: the same
+  screens in a touch layout, Media3 (ExoPlayer) as the player, the built-in torrent engine with
+  a Wi-Fi-only setting, and secrets in the Android Keystore.
+
+## 10. Technology
 | Part | Choice | Notes |
 | --- | --- | --- |
 | App shell | Tauri 2 | Small installer, uses Windows WebView2 |

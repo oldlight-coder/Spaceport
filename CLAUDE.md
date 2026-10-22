@@ -1,6 +1,6 @@
 # Spaceport: instructions for Claude
 
-Spaceport is a personal, standalone Stremio client for Windows. Read `SPEC.md` for what to build
+Spaceport is a personal, standalone Stremio client for Windows (and, from M15, Android). Read `SPEC.md` for what to build
 and `PROGRESS.md` for where the work stands. Both files are the source of truth; this conversation
 is not.
 
@@ -24,8 +24,8 @@ is not.
 - Local servers (torrent stream server) bind to `127.0.0.1` only.
 - Build-time downloads (libmpv, etc.) come from the official upstream project and are checked
   against a pinned SHA-256.
-- Secrets (Stremio auth key, debrid keys) go in the Windows Credential Manager, never in plain
-  files or logs.
+- Secrets (Stremio auth key, debrid keys) go in the Windows Credential Manager (Android: the
+  Android Keystore), never in plain files or logs.
 
 ## Checks before every commit
 - `pnpm typecheck` (tsc --noEmit) passes.

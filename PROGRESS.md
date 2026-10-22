@@ -91,6 +91,30 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - **Acceptance:** a title added here shows in the official Stremio app's library, and one removed
   here leaves it, with its watch progress kept.
 
+## M13. Browsing and player conveniences
+- [ ] Calendar of upcoming episodes
+- [ ] Home row editor (order and hide rows; catalogs on Movies/Series/Anime)
+- [ ] Watch history
+- [ ] "More like this" and searchable cast and directors on the title page
+- [ ] Auto-play next episode switch in Settings
+- [ ] Shortcut help on "?" in the player
+- **Acceptance:** each works in the Windows app.
+
+## M14. Mini player
+- [ ] Shrink the playing video to a corner window inside Spaceport and keep browsing; restore
+  to full size
+- **Acceptance:** browsing, searching and opening titles work while the mini player plays.
+
+## M15. Android
+- [ ] Project: Tauri Android target, build and signing steps in README (APK, owner's key)
+- [ ] Touch layout of every screen for phones and tablets (portrait and landscape)
+- [ ] Secrets in the Android Keystore
+- [ ] Player on Media3 (ExoPlayer): sources, fallback, audio and subtitle tracks, addon
+  subtitles, resume, progress, next episode, AniSkip
+- [ ] Torrent engine on Android with a Wi-Fi-only setting and a smaller default cache
+- **Acceptance:** sideloaded APK on the owner's phone: login, browse, pick, play, resume, skip
+  intro, torrent and debrid streams.
+
 ## Decisions
 (Record any spec changes agreed with the owner here.)
 - 2026-10-20: Settings page brought forward from M8 at the owner's request. A cog button in the top
@@ -130,6 +154,11 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-22: Adding and removing library titles was missing from SPEC section 1 (owner noticed);
   added as M12. Like the official apps, removing only sets the entry's "removed" flag, so watch
   progress and watched marks survive and come back if the title is added again.
+- 2026-10-22: New features agreed with the owner (SPEC section 9): M13 conveniences, M14 mini
+  player, M15 Android. Android choices: Media3/ExoPlayer player (ASS subtitles shown as plain
+  text there), phones and tablets (no TV layout), built-in torrents with a Wi-Fi-only switch,
+  sideloaded APK signed with the owner's key (no store account). On Android secrets go in the
+  Android Keystore, the counterpart of the Windows Credential Manager.
 
 ## Log
 (One line per finished item: date, item, commit.)
