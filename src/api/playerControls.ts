@@ -38,6 +38,8 @@ export interface PlaybackState {
   /** Anime intro, outro and recap times. */
   skips: SkipSegment[];
   autoSkip: boolean;
+  /** The video is in the mini player in a corner of the main window. */
+  mini: boolean;
   /** Why an anime has no skip times, when the lookup stopped somewhere. */
   skipNote: string | null;
   /** The next episode's label, when there is one to count down to. */
@@ -66,6 +68,7 @@ export type Control =
   | { action: "resetSubtitleDelay" }
   | { action: "setSubtitleScale"; scale: number }
   | { action: "toggleFullscreen" }
+  | { action: "setMini"; on: boolean }
   | { action: "back" }
   | { action: "close" };
 

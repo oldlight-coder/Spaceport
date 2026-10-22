@@ -385,7 +385,8 @@ export default function Controls() {
           setHelp((shown) => !shown);
           break;
         case "Escape":
-          if (help) setHelp(false);
+          if (state?.mini) send({ action: "setMini", on: false });
+          else if (help) setHelp(false);
           else if (menu) setMenu(null);
           else send({ action: "back" });
           break;
@@ -394,7 +395,7 @@ export default function Controls() {
       }
       return true;
     },
-    [state?.volume, wake, skip, menu, help],
+    [state?.volume, state?.mini, wake, skip, menu, help],
   );
 
   // Registered once: the state changes four times a second, and re-registering the forwarded
@@ -464,6 +465,8 @@ export default function Controls() {
   else if (seeking) badge = "Seeking…";
   else if (state?.buffering) badge = "Buffering…";
 
+  if (state?.mini) return <MiniControls state={state} paused={paused} />;
+
   return (
     <div
       className={idle ? "surface idle" : "surface"}
@@ -474,6 +477,14 @@ export default function Controls() {
       <div className="top">
         <button className="icon" onClick={() => send({ action: "close" })} aria-label="Close player">
           ←
+        </button>
+        <button
+          className="icon mini-enter"
+          onClick={() => send({ action: "setMini", on: true })}
+          aria-label="Mini player"
+          title="Mini player: keep watching while you browse"
+        >
+          ⧉
         </button>
         <div>
           <div className="title">{state?.title ?? "Spaceport"}</div>
@@ -805,4 +816,50 @@ export default function Controls() {
 /** The part of a track label before any details in brackets, to keep the bar short. */
 function shortLabel(label: string) {
   return label.replace(/\s*\(.*\)$/, "");
+}
+
+/**
+ * The mini player's controls: play or pause, back to full size, close, and a progress line.
+ * A double click also brings the video back to full size.
+ */
+function MiniControls({ state, paused }: { state: PlaybackState; paused: boolean }) {
+  const share = state.duration > 0 ? Math.min(1, state.position / state.duration) : 0;
+  return (
+    <div
+      className="mini"
+      onDoubleClick={(e) => {
+        if (e.target === e.currentTarget) send({ action: "setMini", on: false });
+      }}
+    >
+      <div className="mini-title">{state.title}</div>
+      <div className="mini-buttons">
+        <button
+          className="icon"
+          onClick={() => send({ action: "togglePause" })}
+          aria-label={paused ? "Play" : "Pause"}
+        >
+          {paused ? "▶" : "❚❚"}
+        </button>
+        <button
+          className="icon"
+          onClick={() => send({ action: "setMini", on: false })}
+          aria-label="Full size"
+          title="Back to full size"
+        >
+          ⤢
+        </button>
+        <button
+          className="icon"
+          onClick={() => send({ action: "close" })}
+          aria-label="Close player"
+          title="Close"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="mini-progress" aria-hidden="true">
+        <span style={{ width: `${share * 100}%` }} />
+      </div>
+    </div>
+  );
 }

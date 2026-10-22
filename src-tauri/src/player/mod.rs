@@ -1,6 +1,7 @@
 //! Video playback with libmpv, drawn into a child window of the main window, with Spaceport's
 //! controls in a transparent window kept over it.
 
+pub mod layout;
 mod mpv;
 mod queue;
 mod state;
@@ -86,6 +87,10 @@ pub enum PlayerEvent {
         reason: String,
     },
     Ended,
+    /// The video moved between full size and the mini player.
+    Layout {
+        mini: bool,
+    },
     /// Every candidate failed.
     Failed {
         message: String,
@@ -132,6 +137,10 @@ pub enum Control {
         index: usize,
     },
     ToggleFullscreen,
+    /// Shrink the video to the mini player in a corner, or bring it back to full size.
+    SetMini {
+        on: bool,
+    },
     /// Leave fullscreen, or close the player when not in fullscreen.
     Back,
     Close,
@@ -210,6 +219,8 @@ pub struct Player {
     lib: Mutex<Option<Arc<MpvLib>>>,
     session: Mutex<Option<Session>>,
     reporter: Mutex<Option<Reporter>>,
+    /// The video is in the mini player rather than filling the window.
+    mini: AtomicBool,
 }
 
 /// Sends the tracker's report, if playback started.
@@ -286,6 +297,10 @@ impl Player {
             next_up,
             auto_skip,
         } = request;
+        // A video started from the page while the mini player runs is watched at full size.
+        if self.is_mini() {
+            self.set_mini(app, false)?;
+        }
         let title = title.as_str();
         let now = Instant::now();
         let (queue, first) =
@@ -399,7 +414,11 @@ impl Player {
         // Window calls run without the session lock: resizing the window calls back into
         // the player (resize, is_open) on this same thread.
         match control {
+            Control::SetMini { on } => return self.set_mini(app, on),
             Control::ToggleFullscreen => {
+                if self.is_mini() {
+                    self.set_mini(app, false)?;
+                }
                 let window = main_window(app)?;
                 let full = window.is_fullscreen().map_err(|e| e.to_string())?;
                 return window.set_fullscreen(!full).map_err(|e| e.to_string());
@@ -493,7 +512,10 @@ impl Player {
                 }
                 apply(mpv, action)
             }
-            Control::ToggleFullscreen | Control::Back | Control::Close => Ok(()),
+            Control::ToggleFullscreen
+            | Control::Back
+            | Control::Close
+            | Control::SetMini { .. } => Ok(()),
         }
     }
 
@@ -619,11 +641,47 @@ impl Player {
         let _ = self.close_session();
     }
 
-    /// Keeps the video window the size of the main window. Main thread only.
+    /// Keeps the video in its place when the main window's client area is `width` x `height`:
+    /// filling it, or in the mini player's corner. Main thread only.
     pub fn resize(&self, width: u32, height: u32) {
+        let rect = layout::video_rect(width, height, self.is_mini());
         if let Some(session) = self.session.lock().unwrap().as_ref() {
-            session.surface.resize(width, height);
+            session.surface.place(rect);
         }
+    }
+
+    pub fn is_mini(&self) -> bool {
+        self.mini.load(Ordering::SeqCst)
+    }
+
+    /// Moves the video into the mini player or back to full size. Main thread only.
+    pub fn set_mini(&self, app: &AppHandle, on: bool) -> Result<(), String> {
+        if !self.is_open() {
+            self.mini.store(false, Ordering::SeqCst);
+            return Ok(());
+        }
+        let main = main_window(app)?;
+        if on && main.is_fullscreen().unwrap_or(false) {
+            // The mini player belongs in the normal window; leaving fullscreen resizes it.
+            main.set_fullscreen(false).map_err(|e| e.to_string())?;
+        }
+        self.mini.store(on, Ordering::SeqCst);
+        let size = main.inner_size().map_err(|e| e.to_string())?;
+        self.resize(size.width, size.height);
+        place_controls(app);
+        if let Some(session) = self.session.lock().unwrap().as_ref() {
+            let mut state = session.state.lock().unwrap();
+            state.mini = on;
+            let _ = app.emit("player-state", state.clone());
+        }
+        let _ = app.emit("player", PlayerEvent::Layout { mini: on });
+        // Browsing goes on in the main window; the full-size player takes the keys again.
+        if on {
+            let _ = main.set_focus();
+        } else if let Some(controls) = app.get_webview_window(CONTROLS_WINDOW) {
+            let _ = controls.set_focus();
+        }
+        Ok(())
     }
 
     pub fn is_open(&self) -> bool {
@@ -674,7 +732,8 @@ pub fn open_controls(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Puts the controls window exactly over the main window's client area (physical pixels).
+/// Puts the controls window exactly over the video: the main window's client area, or the
+/// mini player's corner of it (physical pixels).
 pub fn place_controls(app: &AppHandle) {
     let (Some(main), Some(controls)) = (
         app.get_webview_window("main"),
@@ -682,9 +741,17 @@ pub fn place_controls(app: &AppHandle) {
     ) else {
         return;
     };
+    let mini = app
+        .try_state::<crate::AppState>()
+        .is_some_and(|state| state.player.is_mini());
     if let (Ok(position), Ok(size)) = (main.inner_position(), main.inner_size()) {
-        let _ = controls.set_position(tauri::Position::Physical(position));
-        let _ = controls.set_size(tauri::Size::Physical(size));
+        let rect = layout::video_rect(size.width, size.height, mini);
+        let at = tauri::PhysicalPosition::new(position.x + rect.x, position.y + rect.y);
+        let _ = controls.set_position(tauri::Position::Physical(at));
+        let _ = controls.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+            rect.width,
+            rect.height,
+        )));
     }
 }
 
@@ -878,6 +945,7 @@ fn spawn_event_thread(
             // Destroying the last Arc ends mpv; the window goes after it stops drawing.
             drop(session.mpv);
             session.surface.destroy();
+            player.player.mini.store(false, Ordering::SeqCst);
             if let Some(controls) = handle.get_webview_window(CONTROLS_WINDOW) {
                 let _ = controls.destroy();
             }

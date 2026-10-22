@@ -374,3 +374,60 @@ select option {
 .shortcut-help dd {
   margin: 0;
 }
+
+/* The mini player: the whole (small) window is the video; controls show on hover. */
+.mini {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.mini-title,
+.mini-buttons {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 8px 10px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.mini-title {
+  top: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+  background: linear-gradient(rgba(0, 0, 0, 0.7), transparent);
+}
+
+.mini-buttons {
+  bottom: 4px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+}
+
+.mini:hover .mini-title,
+.mini:hover .mini-buttons,
+.mini:focus-within .mini-buttons {
+  opacity: 1;
+}
+
+.mini-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.mini-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}

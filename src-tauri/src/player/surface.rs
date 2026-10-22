@@ -108,16 +108,17 @@ mod imp {
             self.hwnd as i64
         }
 
-        pub fn resize(&self, width: u32, height: u32) {
+        /// Moves and sizes the video within the main window's client area.
+        pub fn place(&self, rect: super::super::layout::Rect) {
             // SAFETY: the window is alive until `destroy`.
             unsafe {
                 SetWindowPos(
                     self.hwnd as HWND,
                     HWND_TOP,
-                    0,
-                    0,
-                    width as i32,
-                    height as i32,
+                    rect.x,
+                    rect.y,
+                    rect.width as i32,
+                    rect.height as i32,
                     SWP_SHOWWINDOW,
                 );
             }
@@ -146,7 +147,7 @@ mod imp {
             0
         }
 
-        pub fn resize(&self, _width: u32, _height: u32) {}
+        pub fn place(&self, _rect: super::super::layout::Rect) {}
 
         pub fn destroy(self) {}
     }

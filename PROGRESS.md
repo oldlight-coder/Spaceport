@@ -353,3 +353,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
   504s from Cinemeta and TMDB searching a cast name); failed search rows show one quiet line
   with "Try again" instead of a heading and a red error.
 - 2026-10-22: M13 accepted by the owner on Windows; ticked.
+- 2026-10-22: M14 implemented (not yet ticked: needs a Windows check): the ⧉ button in the
+  player's top bar moves the video and the controls window into a 16:9 box in the main
+  window's bottom-right corner (layout.rs, unit-tested); the page is sharp and usable, keys go
+  to it, and the box has play/pause, full size (also double-click or Esc) and close. Starting
+  another video from the page, or fullscreen, brings it back to full size.
