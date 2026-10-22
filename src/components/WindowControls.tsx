@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isAndroid } from "../platform";
 
 /** Minimize, maximize or restore, and close, for the title bar Spaceport draws itself. */
 export default function WindowControls() {
+  if (isAndroid) return null;
+  return <WindowButtons />;
+}
+
+function WindowButtons() {
   const [maximized, setMaximized] = useState(false);
   useEffect(() => {
     const win = getCurrentWindow();
@@ -49,6 +55,8 @@ export default function WindowControls() {
 
 /** A bare title bar for screens without the main top bar (start-up, sign-in). */
 export function TitleBar() {
+  // Android draws its own status bar; there is no window to move or close.
+  if (isAndroid) return null;
   return (
     <div className="title-bar" data-tauri-drag-region>
       <span className="brand" data-tauri-drag-region>

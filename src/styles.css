@@ -421,6 +421,8 @@ button.icon {
 
 .install-form input {
   flex: 1;
+  /* A text field's default width would push the button off narrow screens. */
+  min-width: 0;
 }
 
 section > .error {
@@ -1768,4 +1770,150 @@ button.person-link:hover:not(:disabled) {
 
 .title-bar .window-controls {
   margin: 0;
+}
+
+/* Phones and narrow tablets (the Windows window is never this narrow): page tabs in a bottom
+   bar, compact top bar, smaller posters, and room for the status and gesture bars. */
+@media (max-width: 760px) {
+  .topbar {
+    gap: 10px;
+    padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  }
+
+  .topbar .brand {
+    display: none;
+  }
+
+  .search-form {
+    flex: 1 1 auto;
+  }
+
+  .search-form:focus-within {
+    flex-basis: auto;
+  }
+
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    justify-content: space-around;
+    gap: 0;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    background: var(--md-surface-container);
+    box-shadow: 0 -1px 0 var(--border);
+  }
+
+  button.tab {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 2px;
+    font-size: 12px;
+  }
+
+  .content {
+    padding: 16px 12px calc(84px + env(safe-area-inset-bottom));
+  }
+
+  .details {
+    padding: 16px 12px calc(84px + env(safe-area-inset-bottom));
+  }
+
+  .details-hero {
+    margin: -84px -12px 16px;
+    padding: 84px 12px 16px;
+  }
+
+  .details-head {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .details-poster,
+  .bone-details-poster {
+    flex-basis: auto;
+    width: 140px;
+  }
+
+  .details-logo {
+    max-width: 240px;
+  }
+
+  .poster-row .poster-card {
+    flex-basis: 112px;
+  }
+
+  .poster-row .poster-card.landscape {
+    flex-basis: 200px;
+  }
+
+  .poster-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 12px;
+  }
+
+  .episode img,
+  .episode-thumb {
+    flex-basis: 112px;
+    width: 112px;
+  }
+
+  .episode p {
+    display: none;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .library-bar .chip-group {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .streams-panel {
+    width: 100vw;
+    border-radius: 0;
+    padding-top: calc(20px + env(safe-area-inset-top));
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .picked {
+    top: calc(64px + env(safe-area-inset-top));
+  }
+
+  .calendar-entry img,
+  .calendar-thumb {
+    width: 80px;
+  }
+}
+
+/* Touch screens have no hover: show what would appear on it. */
+@media (hover: none) {
+  .poster-remove {
+    opacity: 1;
+  }
+
+  .poster-button:hover img,
+  .poster-button:hover .poster-placeholder {
+    outline: none;
+    transform: none;
+  }
+}
+
+/* Android: the top bar is not a window title bar, and text should not be selectable by a long
+   press on buttons and posters. */
+:root[data-platform="android"] .topbar {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+:root[data-platform="android"] button {
+  -webkit-tap-highlight-color: transparent;
 }

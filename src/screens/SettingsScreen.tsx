@@ -1,5 +1,6 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { ACCENT_PRESETS, Appearance, ThemeMode } from "../theme";
+import { isAndroid } from "../platform";
 import { CODECS, Settings, SubtitleStyle } from "../api/settings";
 import Avatar from "../components/Avatar";
 import LanguageList from "../components/LanguageList";
@@ -15,7 +16,7 @@ const SUBTITLE_COLOURS = [
 const AVATAR_SIZE = 128;
 
 const THEME_MODES: { value: ThemeMode; label: string }[] = [
-  { value: "system", label: "Follow Windows" },
+  { value: "system", label: isAndroid ? "Follow system" : "Follow Windows" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ];

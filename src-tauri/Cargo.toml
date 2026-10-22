@@ -23,10 +23,8 @@ flate2 = "1"
 base64 = "0.22"
 libloading = "0.8"
 # Torrent engine. Its default TLS feature would build aws-lc from C; Spaceport's reqwest already
-# brings native TLS, so only the pure-Rust SHA-1 implementation is switched on here.
+# brings TLS, so only a SHA-1 backend is chosen, per platform below.
 librqbit = { version = "9.0.1", default-features = false }
-librqbit-core = { version = "9.0.1", default-features = false, features = ["sha1-crypto-hash"] }
-librqbit-sha1-wrapper = { version = "9.0.1", default-features = false, features = ["sha1-crypto-hash"] }
 tokio = { version = "1", features = ["net", "io-util", "rt", "sync", "time", "macros"] }
 rand = "0.9"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
@@ -41,11 +39,17 @@ keyring = "3"
 # library to link, rustls with the ring crypto provider and Mozilla's root certificates.
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls", "http2"] }
+# SHA-1 for torrents from the system's crypto (Windows CNG; OpenSSL on Linux dev builds).
+librqbit-core = { version = "9.0.1", default-features = false, features = ["sha1-crypto-hash"] }
+librqbit-sha1-wrapper = { version = "9.0.1", default-features = false, features = ["sha1-crypto-hash"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["json", "http2", "rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-root-certs = "1"
+# Android has no OpenSSL to link: SHA-1 for torrents from aws-lc instead.
+librqbit-core = { version = "9.0.1", default-features = false, features = ["sha1-ring"] }
+librqbit-sha1-wrapper = { version = "9.0.1", default-features = false, features = ["sha1-ring"] }
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }

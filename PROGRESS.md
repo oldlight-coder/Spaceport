@@ -371,3 +371,8 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-22: M15: secrets on Android through Spaceport's own plugin (SpaceportPlugin.kt): an
   AES-256 key created in the Android Keystore encrypts each secret (AES-GCM); only ciphertext
   is kept in the app's private storage. Windows keeps the Credential Manager.
+- 2026-10-22: M15: phone layout (page tabs in a bottom bar, compact top bar, smaller posters,
+  stacked title page, one-column settings, safe areas, hover-only controls always shown on
+  touch, no window buttons on Android, "Follow system" theme label). Android build fixes:
+  torrents' SHA-1 from aws-lc on Android (crypto-hash needs OpenSSL there); Gradle 9.6.1
+  pinned to the SHA-256 Gradle publishes (9c0f7fae…9e14).
