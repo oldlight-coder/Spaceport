@@ -346,3 +346,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-22: M13 (not yet ticked): Calendar tab with the followed series' episodes from a
   week back to two months ahead, grouped by day ("New" and "Upcoming" tags); shares the
   followed-series lookup and 3 h details cache with the new-episode check.
+- 2026-10-22: M13 (not yet ticked): "More like this" row on title pages (same type and first
+  genre from a catalog that filters by genre, the title's own addon first) and cast and
+  director names that search all addons. M13 code complete.

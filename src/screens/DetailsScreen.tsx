@@ -21,7 +21,8 @@ import { refreshNewEpisodes, useNewEpisodes } from "../newEpisodes";
 import { fetchStreams, noStreamsReason, RankedStream } from "../api/streams";
 import { useLoad } from "../components/Loadable";
 import StreamsPanel from "../components/StreamsPanel";
-import { TitleRef } from "../navigation";
+import { TitleRef, useSearch } from "../navigation";
+import MoreLikeThis from "../components/MoreLikeThis";
 import { DetailsSkeleton } from "../components/Skeleton";
 
 interface Props {
@@ -47,7 +48,7 @@ export default function DetailsScreen({ title, onBack }: Props) {
           </button>
         </div>
       )}
-      {meta.status === "ready" && <Details meta={meta.data} />}
+      {meta.status === "ready" && <Details meta={meta.data} source={title.source} />}
     </div>
   );
 }
@@ -142,7 +143,24 @@ function useWatched(item: TitleInfo) {
   return { marks, mark, busy };
 }
 
-function Details({ meta }: { meta: MetaDetails }) {
+/** Names that search all addons for their titles when clicked. */
+function PeopleLinks({ names }: { names: string[] }) {
+  const search = useSearch();
+  return (
+    <>
+      {names.map((name, i) => (
+        <span key={name}>
+          {i > 0 && ", "}
+          <button className="person-link" onClick={() => search(name)} title={`Search for ${name}`}>
+            {name}
+          </button>
+        </span>
+      ))}
+    </>
+  );
+}
+
+function Details({ meta, source }: { meta: MetaDetails; source?: string }) {
   const [target, setTarget] = useState<StreamTarget | null>(null);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const [progress, reloadProgress] = useTitleProgress(meta.id);
@@ -360,13 +378,13 @@ function Details({ meta }: { meta: MetaDetails }) {
             {meta.directors.length > 0 && (
               <p>
                 <span className="muted">Director </span>
-                {meta.directors.join(", ")}
+                <PeopleLinks names={meta.directors} />
               </p>
             )}
             {meta.cast.length > 0 && (
               <p>
                 <span className="muted">Cast </span>
-                {meta.cast.join(", ")}
+                <PeopleLinks names={meta.cast} />
               </p>
             )}
           </div>
@@ -387,6 +405,7 @@ function Details({ meta }: { meta: MetaDetails }) {
           <EpisodeList episodes={meta.videos} actions={episodeActions} progress={progress} />
         </section>
       )}
+      <MoreLikeThis id={meta.id} type={meta.type} genres={meta.genres} source={source} />
       {target && (
         <StreamsPanel
           key={target.videoId}

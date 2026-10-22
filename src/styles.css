@@ -1675,3 +1675,20 @@ button.calendar-entry {
 .calendar-day + .calendar-day {
   margin-top: 0;
 }
+
+button.person-link {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: var(--md-outline-variant);
+  text-underline-offset: 3px;
+}
+
+button.person-link:hover:not(:disabled) {
+  box-shadow: none;
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}

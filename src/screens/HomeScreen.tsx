@@ -4,7 +4,7 @@ import { logout, Session, User } from "../api/auth";
 import { CatalogLayout, getSettings, saveSettings, Settings } from "../api/settings";
 import Avatar from "../components/Avatar";
 import SearchBox from "../components/SearchBox";
-import { OpenAddonsContext, OpenTitleContext, TitleRef } from "../navigation";
+import { OpenAddonsContext, OpenTitleContext, SearchContext, TitleRef } from "../navigation";
 import { useOnline } from "../online";
 import { useForwardPlayerKeys, usePlayerBackdrop } from "../playerKeys";
 import { applyTheme, cacheAppearance } from "../theme";
@@ -113,6 +113,7 @@ export default function HomeScreen({ user, onSession }: Props) {
   return (
     <OpenTitleContext.Provider value={openTitle}>
       <OpenAddonsContext.Provider value={openAddons}>
+      <SearchContext.Provider value={search}>
       <CatalogLayoutContext.Provider value={catalogLayout}>
         <NewEpisodesContext.Provider value={newEpisodes}>
           <div className="app">
@@ -183,6 +184,7 @@ export default function HomeScreen({ user, onSession }: Props) {
           </div>
         </NewEpisodesContext.Provider>
       </CatalogLayoutContext.Provider>
+      </SearchContext.Provider>
       </OpenAddonsContext.Provider>
     </OpenTitleContext.Provider>
   );
