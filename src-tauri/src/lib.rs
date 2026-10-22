@@ -599,6 +599,18 @@ async fn player_open(
 ) -> Result<(), String> {
     let kind = item.kind.clone();
     let engine = app.state::<AppState>().torrents.clone();
+    // On Android, torrents may be kept off mobile data (Settings > Torrents).
+    let wifi_only = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .unwrap()
+        .torrent_wifi_only;
+    let has_torrents = candidates
+        .iter()
+        .any(|c| c.url.is_none() && c.torrent.is_some());
+    let torrents_allowed =
+        !(cfg!(target_os = "android") && wifi_only && has_torrents) || mobile::on_wifi(&app).await;
     let mut playable = Vec::new();
     for candidate in candidates {
         let url = match (candidate.url, candidate.torrent) {
@@ -609,6 +621,7 @@ async fn player_open(
             {
                 url
             }
+            (None, Some(_)) if !torrents_allowed => continue,
             // Torrents play through the local stream server.
             (None, Some(source)) => match engine.register(source).await {
                 Ok(url) => url,
@@ -623,7 +636,12 @@ async fn player_open(
         });
     }
     if playable.is_empty() {
-        return Err("none of these streams can be played".to_string());
+        return Err(if torrents_allowed {
+            "none of these streams can be played".to_string()
+        } else {
+            "torrents only play on Wi-Fi (Settings > Torrents), and there is no other stream"
+                .to_string()
+        });
     }
     let candidates = playable;
     let settings = app.state::<AppState>().settings.lock().unwrap().clone();
@@ -668,6 +686,7 @@ async fn player_open(
         .recv()
         .map_err(|_| "the player did not start".to_string())??;
     player::open_controls(&app)?;
+    let _ = tauri::Emitter::emit(&app, "player", player::PlayerEvent::Opened);
 
     // Anime skip times need the episode's length, so they are fetched once it is known.
     if let Some(anime) = anime {

@@ -159,6 +159,11 @@ pass on Windows. The owner tests each milestone before the next one starts.
   text there), phones and tablets (no TV layout), built-in torrents with a Wi-Fi-only switch,
   sideloaded APK signed with the owner's key (no store account). On Android secrets go in the
   Android Keystore, the counterpart of the Windows Credential Manager.
+- 2026-10-22: Android player design: Media3 draws the video in a native view under the page and
+  the page draws the same React controls over it; Rust drives Media3 through an mpv-compatible
+  layer (player/exo.rs), so queue, fallback, resume and progress code is shared. Not on Android:
+  subtitle delay (Media3 has no timing offset), the mini player, the volume slider (volume keys)
+  and loading subtitle files from the device. To confirm with the owner when testing.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -376,3 +381,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
   touch, no window buttons on Android, "Follow system" theme label). Android build fixes:
   torrents' SHA-1 from aws-lc on Android (crypto-hash needs OpenSSL there); Gradle 9.6.1
   pinned to the SHA-256 Gradle publishes (9c0f7fae…9e14).
+- 2026-10-22: M15: Android player on Media3 (sources, fallback, audio and subtitle tracks, addon
+  subtitles, resume, progress, next episode, AniSkip; back button closes it, landscape without
+  system bars), tap and double-tap controls; torrents "only on Wi-Fi" setting and a 2 GB default
+  cache on Android. Untested on a device yet.

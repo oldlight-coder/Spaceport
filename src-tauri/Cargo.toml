@@ -31,13 +31,14 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 url = "2"
-# Without platform features keyring falls back to an in-memory mock store, which keeps
-# non-Windows dev builds and tests compiling. Windows uses the Credential Manager.
-keyring = "3"
 
 # HTTPS: the system's TLS on Windows (and Linux dev builds); on Android, where there is no such
 # library to link, rustls with the ring crypto provider and Mozilla's root certificates.
 [target.'cfg(not(target_os = "android"))'.dependencies]
+# Without platform features keyring falls back to an in-memory mock store, which keeps
+# non-Windows dev builds and tests compiling. Windows uses the Credential Manager; Android the
+# Keystore through Spaceport's plugin.
+keyring = "3"
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls", "http2"] }
 # SHA-1 for torrents from the system's crypto (Windows CNG; OpenSSL on Linux dev builds).
 librqbit-core = { version = "9.0.1", default-features = false, features = ["sha1-crypto-hash"] }

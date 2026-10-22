@@ -1,6 +1,7 @@
 //! Secret storage: the Windows Credential Manager, or on Android the Android Keystore (through
 //! Spaceport's plugin). Secrets never touch plain files.
 
+#[cfg(not(target_os = "android"))]
 const SERVICE: &str = "Spaceport";
 
 #[derive(Debug, thiserror::Error)]
@@ -15,14 +16,17 @@ pub trait SecretStore: Send + Sync {
 }
 
 /// Stores each secret as a generic credential named `Spaceport` with the secret name as user.
+#[cfg(not(target_os = "android"))]
 pub struct KeyringStore;
 
+#[cfg(not(target_os = "android"))]
 impl KeyringStore {
     fn entry(name: &str) -> Result<keyring::Entry, SecretError> {
         keyring::Entry::new(SERVICE, name).map_err(|e| SecretError(e.to_string()))
     }
 }
 
+#[cfg(not(target_os = "android"))]
 impl SecretStore for KeyringStore {
     fn get(&self, name: &str) -> Result<Option<String>, SecretError> {
         match Self::entry(name)?.get_password() {

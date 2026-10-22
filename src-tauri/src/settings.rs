@@ -165,6 +165,8 @@ pub struct Settings {
     /// Most gigabytes downloaded torrents may use; torrents not being watched are deleted,
     /// least recently watched first, beyond it. Everything is deleted when Spaceport exits.
     pub torrent_cache_gb: u32,
+    /// Android: play torrents only on Wi-Fi (or Ethernet), never over mobile data.
+    pub torrent_wifi_only: bool,
     pub subtitle_style: SubtitleStyle,
     /// Skip anime intros, outros and recaps automatically (AniSkip times).
     pub anime_auto_skip: bool,
@@ -183,7 +185,9 @@ impl Default for Settings {
             filters: StreamFilters::default(),
             avatar: None,
             torrent_dht: true,
-            torrent_cache_gb: 10,
+            // Phones have far less room than computers.
+            torrent_cache_gb: if cfg!(target_os = "android") { 2 } else { 10 },
+            torrent_wifi_only: true,
             subtitle_style: SubtitleStyle::default(),
             anime_auto_skip: false,
             auto_play_next: true,

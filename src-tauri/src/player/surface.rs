@@ -135,12 +135,17 @@ mod imp {
 
 #[cfg(not(windows))]
 mod imp {
-    /// Non-Windows builds have no embedded player; they exist for development and tests only.
+    /// On Android the Kotlin plugin owns the video view, so there is nothing to make here.
+    /// Other non-Windows builds have no embedded player; they exist for development and tests.
     pub struct Surface;
 
     impl Surface {
         pub fn create(_parent: isize) -> Result<Self, String> {
-            Err("the player is only available on Windows".to_string())
+            if cfg!(target_os = "android") {
+                Ok(Self)
+            } else {
+                Err("the player is only available on Windows".to_string())
+            }
         }
 
         pub fn id(&self) -> i64 {

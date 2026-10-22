@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { emitTo } from "@tauri-apps/api/event";
 import { onPlayerEvent, PLAYER_KEY_EVENT, PLAYER_OPEN_CLASS } from "./api/player";
+import { isAndroid } from "./platform";
 
 /** The player controls window's label (`CONTROLS_WINDOW` in the backend). */
 const CONTROLS_WINDOW = "player-controls";
@@ -11,6 +12,8 @@ const CONTROLS_WINDOW = "player-controls";
  */
 export function useForwardPlayerKeys() {
   useEffect(() => {
+    // On Android the controls are part of this page and hear its keys themselves.
+    if (isAndroid) return;
     let playing = false;
     const unlisten = onPlayerEvent((event) => {
       if (event.kind === "loaded" || event.kind === "fallback") playing = true;

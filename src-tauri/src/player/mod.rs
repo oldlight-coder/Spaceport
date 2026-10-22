@@ -1,25 +1,36 @@
 //! Video playback with libmpv, drawn into a child window of the main window, with Spaceport's
-//! controls in a transparent window kept over it.
+//! controls in a transparent window kept over it. On Android, Media3 plays instead (see `exo`)
+//! and the controls are drawn by the main page.
 
+#[cfg(any(target_os = "android", test))]
+mod exo;
 pub mod layout;
+#[cfg_attr(target_os = "android", allow(dead_code))]
 mod mpv;
 mod queue;
 mod state;
 mod surface;
 mod watch;
 
+#[cfg(not(target_os = "android"))]
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
+#[cfg(desktop)]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 use crate::aniskip::SkipSegment;
 use crate::settings::SubtitleStyle;
 use crate::stremio::subtitles::AddonSubtitle;
-use mpv::{Event, Mpv, MpvLib, FORMAT_DOUBLE, FORMAT_FLAG, FORMAT_STRING};
+#[cfg(target_os = "android")]
+use exo::{Mpv, MpvLib};
+use mpv::{Event, FORMAT_DOUBLE, FORMAT_FLAG, FORMAT_STRING};
+#[cfg(not(target_os = "android"))]
+use mpv::{Mpv, MpvLib};
 pub use queue::Candidate;
 use queue::{Action, PlayQueue};
 pub use state::PlaybackState as PlaybackStateView;
@@ -29,6 +40,7 @@ use watch::WatchTracker;
 pub use watch::{WatchReport, WatchTarget};
 
 /// The DLL `pnpm run setup` places in `src-tauri/lib` and the installer puts next to the app.
+#[cfg(not(target_os = "android"))]
 const LIBRARY_FILE: &str = "libmpv-2.dll";
 
 /// Label of the transparent window holding the player controls.
@@ -87,6 +99,8 @@ pub enum PlayerEvent {
         reason: String,
     },
     Ended,
+    /// The player is showing; on Android the main page draws its controls from now on.
+    Opened,
     /// The video moved between full size and the mini player.
     Layout {
         mini: bool,
@@ -238,6 +252,7 @@ fn report(watch: &SharedWatch, reporter: &Option<Reporter>, finished: bool) {
 /// Where libmpv may be, in order: next to the installed app (bundle resources), next to the
 /// executable, and in debug builds the `src-tauri/lib` folder `pnpm run setup` fills, since
 /// `tauri dev` does not always copy resources beside the dev executable.
+#[cfg(not(target_os = "android"))]
 fn library_candidates(app: &AppHandle) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(dir) = app.path().resource_dir() {
@@ -262,7 +277,23 @@ fn library_candidates(app: &AppHandle) -> Vec<PathBuf> {
 }
 
 impl Player {
+    /// The Kotlin player plugin, on Android.
+    #[cfg(target_os = "android")]
+    fn lib(&self, app: &AppHandle) -> Result<Arc<MpvLib>, String> {
+        let mut lib = self.lib.lock().unwrap();
+        if let Some(loaded) = lib.as_ref() {
+            return Ok(loaded.clone());
+        }
+        let native = app
+            .try_state::<crate::mobile::Native<tauri::Wry>>()
+            .ok_or("the player plugin is not loaded")?;
+        let loaded = Arc::new(MpvLib(native.0.clone()));
+        *lib = Some(loaded.clone());
+        Ok(loaded)
+    }
+
     /// Loads libmpv once it is found. A failure is not remembered, so the next Play tries again.
+    #[cfg(not(target_os = "android"))]
     fn lib(&self, app: &AppHandle) -> Result<Arc<MpvLib>, String> {
         let mut lib = self.lib.lock().unwrap();
         if let Some(loaded) = lib.as_ref() {
@@ -415,18 +446,10 @@ impl Player {
         // the player (resize, is_open) on this same thread.
         match control {
             Control::SetMini { on } => return self.set_mini(app, on),
-            Control::ToggleFullscreen => {
-                if self.is_mini() {
-                    self.set_mini(app, false)?;
-                }
-                let window = main_window(app)?;
-                let full = window.is_fullscreen().map_err(|e| e.to_string())?;
-                return window.set_fullscreen(!full).map_err(|e| e.to_string());
-            }
+            Control::ToggleFullscreen => return self.toggle_fullscreen(app),
             Control::Back => {
-                let window = main_window(app)?;
-                if window.is_fullscreen().unwrap_or(false) {
-                    return window.set_fullscreen(false).map_err(|e| e.to_string());
+                if is_fullscreen(app) {
+                    return set_fullscreen(app, false);
                 }
                 return self.close_session();
             }
@@ -517,6 +540,13 @@ impl Player {
             | Control::Close
             | Control::SetMini { .. } => Ok(()),
         }
+    }
+
+    fn toggle_fullscreen(&self, app: &AppHandle) -> Result<(), String> {
+        if self.is_mini() {
+            self.set_mini(app, false)?;
+        }
+        set_fullscreen(app, !is_fullscreen(app))
     }
 
     fn close_session(&self) -> Result<(), String> {
@@ -660,10 +690,14 @@ impl Player {
             self.mini.store(false, Ordering::SeqCst);
             return Ok(());
         }
+        if cfg!(target_os = "android") {
+            // Android has no mini player: the video always fills the screen.
+            return Ok(());
+        }
         let main = main_window(app)?;
-        if on && main.is_fullscreen().unwrap_or(false) {
+        if on && is_fullscreen(app) {
             // The mini player belongs in the normal window; leaving fullscreen resizes it.
-            main.set_fullscreen(false).map_err(|e| e.to_string())?;
+            set_fullscreen(app, false)?;
         }
         self.mini.store(on, Ordering::SeqCst);
         let size = main.inner_size().map_err(|e| e.to_string())?;
@@ -704,8 +738,39 @@ fn main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .ok_or_else(|| "the main window is gone".to_string())
 }
 
+/// Whether the main window fills the screen.
+#[cfg(desktop)]
+fn is_fullscreen(app: &AppHandle) -> bool {
+    main_window(app).is_ok_and(|w| w.is_fullscreen().unwrap_or(false))
+}
+
+#[cfg(desktop)]
+fn set_fullscreen(app: &AppHandle, on: bool) -> Result<(), String> {
+    main_window(app)?
+        .set_fullscreen(on)
+        .map_err(|e| e.to_string())
+}
+
+/// On Android the player always fills the screen (the Kotlin side hides the system bars).
+#[cfg(mobile)]
+fn is_fullscreen(_app: &AppHandle) -> bool {
+    false
+}
+
+#[cfg(mobile)]
+fn set_fullscreen(_app: &AppHandle, _on: bool) -> Result<(), String> {
+    Ok(())
+}
+
+/// On Android the main page draws the controls itself, once it hears `PlayerEvent::Opened`.
+#[cfg(mobile)]
+pub fn open_controls(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
 /// Opens the transparent controls window over the main window's client area. Must not run on
 /// the main thread or in a synchronous command: creating a web view there deadlocks on Windows.
+#[cfg(desktop)]
 pub fn open_controls(app: &AppHandle) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window(CONTROLS_WINDOW) {
         let _ = existing.set_focus();
@@ -763,7 +828,13 @@ fn window_handle(window: &WebviewWindow) -> Result<isize, String> {
         .map_err(|e| e.to_string())
 }
 
-#[cfg(not(windows))]
+/// On Android the Kotlin plugin makes its own view; there is no parent handle to pass.
+#[cfg(target_os = "android")]
+fn window_handle(_window: &WebviewWindow) -> Result<isize, String> {
+    Ok(0)
+}
+
+#[cfg(not(any(windows, target_os = "android")))]
 fn window_handle(_window: &WebviewWindow) -> Result<isize, String> {
     Err("the player is only available on Windows".to_string())
 }
@@ -888,6 +959,10 @@ fn spawn_event_thread(
             };
             match event {
                 Event::Shutdown => break,
+                Event::CloseRequested => {
+                    drop(guard);
+                    let _ = quit(&mpv, &closing);
+                }
                 Event::FileLoaded => {
                     q.on_loaded();
                     if let Some(w) = watch.lock().unwrap().as_mut() {
@@ -949,8 +1024,8 @@ fn spawn_event_thread(
             if let Some(controls) = handle.get_webview_window(CONTROLS_WINDOW) {
                 let _ = controls.destroy();
             }
+            let _ = set_fullscreen(&handle, false);
             if let Some(main) = handle.get_webview_window("main") {
-                let _ = main.set_fullscreen(false);
                 let _ = main.set_focus();
             }
             let _ = handle.emit("player", PlayerEvent::Closed);

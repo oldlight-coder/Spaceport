@@ -336,6 +336,12 @@ pub enum Event {
     EndOfFile,
     Stopped,
     Failed(String),
-    Property { name: String, value: PropertyValue },
+    Property {
+        name: String,
+        value: PropertyValue,
+    },
+    /// The user asked to leave the player outside the controls (Android's back button).
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    CloseRequested,
     Other,
 }

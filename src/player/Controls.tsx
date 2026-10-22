@@ -3,6 +3,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { onPlayerEvent, PLAY_NEXT_EVENT, PLAYER_KEY_EVENT } from "../api/player";
 import { getSettings } from "../api/settings";
 import { formatTime } from "../format";
+import { isAndroid } from "../platform";
 import {
   control,
   Control,
@@ -20,6 +21,8 @@ const NEXT_UP_BEFORE_END = 30;
 const NEXT_UP_COUNTDOWN = 10;
 const SKIP_SECONDS = 10;
 const SUB_DELAY_STEP = 0.1;
+/** Two taps this close together (ms) are a double tap. */
+const DOUBLE_TAP_MS = 250;
 
 /** The keys the player answers to, for the help shown on "?". */
 const SHORTCUTS: [string, string][] = [
@@ -261,6 +264,7 @@ export default function Controls() {
   const resumeShownFor = useRef<string | null>(null);
   const hideTimer = useRef<number | undefined>(undefined);
   const clickTimer = useRef<number | undefined>(undefined);
+  const lastTap = useRef(0);
   const overBar = useRef(false);
 
   useEffect(() => {
@@ -416,18 +420,44 @@ export default function Controls() {
   }, []);
 
   // A single click pauses (or closes an open menu); a double click toggles fullscreen.
+  // On a touch screen a tap shows or hides the controls and a double tap on either half skips.
   function onSurfaceClick(e: React.MouseEvent) {
     if (e.target !== e.currentTarget) return;
     if (menu) {
       setMenu(null);
       return;
     }
+    if (isAndroid) {
+      onTap(e);
+      return;
+    }
     window.clearTimeout(clickTimer.current);
     clickTimer.current = window.setTimeout(() => send({ action: "togglePause" }), 220);
   }
 
+  function onTap(e: React.MouseEvent) {
+    window.clearTimeout(clickTimer.current);
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_MS) {
+      lastTap.current = 0;
+      const box = e.currentTarget.getBoundingClientRect();
+      skip(e.clientX < box.left + box.width / 2 ? -SKIP_SECONDS : SKIP_SECONDS);
+      return;
+    }
+    lastTap.current = now;
+    const shown = !idle;
+    clickTimer.current = window.setTimeout(() => {
+      if (shown) {
+        window.clearTimeout(hideTimer.current);
+        setIdle(true);
+      } else {
+        wake();
+      }
+    }, DOUBLE_TAP_MS);
+  }
+
   function onSurfaceDoubleClick(e: React.MouseEvent) {
-    if (e.target !== e.currentTarget) return;
+    if (e.target !== e.currentTarget || isAndroid) return;
     window.clearTimeout(clickTimer.current);
     send({ action: "toggleFullscreen" });
   }
@@ -478,14 +508,16 @@ export default function Controls() {
         <button className="icon" onClick={() => send({ action: "close" })} aria-label="Close player">
           ←
         </button>
-        <button
-          className="icon mini-enter"
-          onClick={() => send({ action: "setMini", on: true })}
-          aria-label="Mini player"
-          title="Mini player: keep watching while you browse"
-        >
-          ⧉
-        </button>
+        {!isAndroid && (
+          <button
+            className="icon mini-enter"
+            onClick={() => send({ action: "setMini", on: true })}
+            aria-label="Mini player"
+            title="Mini player: keep watching while you browse"
+          >
+            ⧉
+          </button>
+        )}
         <div>
           <div className="title">{state?.title ?? "Spaceport"}</div>
           {state?.stream && <div className="stream">{state.stream}</div>}
@@ -616,15 +648,18 @@ export default function Controls() {
           >
             {state?.muted || state?.volume === 0 ? "🔇" : "🔊"}
           </button>
-          <input
-            className="volume"
-            type="range"
-            min={0}
-            max={100}
-            value={state?.muted ? 0 : Math.min(state?.volume ?? 100, 100)}
-            onChange={(e) => send({ action: "setVolume", volume: Number(e.target.value) })}
-            aria-label="Volume"
-          />
+          {/* Phones have volume keys. */}
+          {!isAndroid && (
+            <input
+              className="volume"
+              type="range"
+              min={0}
+              max={100}
+              value={state?.muted ? 0 : Math.min(state?.volume ?? 100, 100)}
+              onChange={(e) => send({ action: "setVolume", volume: Number(e.target.value) })}
+              aria-label="Volume"
+            />
+          )}
           <span className="grow" />
 
           <Menu
@@ -665,36 +700,39 @@ export default function Controls() {
                 options: [],
                 content: (
                   <div className="adjust">
-                    <div className="adjust-row">
-                      <span>Delay</span>
-                      <button
-                        onClick={() =>
-                          send({ action: "adjustSubtitleDelay", seconds: -SUB_DELAY_STEP })
-                        }
-                        aria-label="Show subtitles earlier"
-                      >
-                        −
-                      </button>
-                      <span className="adjust-value">
-                        {subDelay > 0 ? "+" : ""}
-                        {subDelay.toFixed(1)} s
-                      </span>
-                      <button
-                        onClick={() =>
-                          send({ action: "adjustSubtitleDelay", seconds: SUB_DELAY_STEP })
-                        }
-                        aria-label="Show subtitles later"
-                      >
-                        +
-                      </button>
-                      <button
-                        className="reset"
-                        onClick={() => send({ action: "resetSubtitleDelay" })}
-                        disabled={subDelay === 0}
-                      >
-                        Reset
-                      </button>
-                    </div>
+                    {/* Media3 cannot shift subtitle timing. */}
+                    {!isAndroid && (
+                      <div className="adjust-row">
+                        <span>Delay</span>
+                        <button
+                          onClick={() =>
+                            send({ action: "adjustSubtitleDelay", seconds: -SUB_DELAY_STEP })
+                          }
+                          aria-label="Show subtitles earlier"
+                        >
+                          −
+                        </button>
+                        <span className="adjust-value">
+                          {subDelay > 0 ? "+" : ""}
+                          {subDelay.toFixed(1)} s
+                        </span>
+                        <button
+                          onClick={() =>
+                            send({ action: "adjustSubtitleDelay", seconds: SUB_DELAY_STEP })
+                          }
+                          aria-label="Show subtitles later"
+                        >
+                          +
+                        </button>
+                        <button
+                          className="reset"
+                          onClick={() => send({ action: "resetSubtitleDelay" })}
+                          disabled={subDelay === 0}
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    )}
                     <div className="adjust-row">
                       <span>Size</span>
                       <button
@@ -742,20 +780,24 @@ export default function Controls() {
                   onSelect: () => choose({ action: "setSubtitle", track: null, key: s.key }),
                 })),
               },
-              {
-                heading: "From this computer",
-                options: [
-                  {
-                    key: "file",
-                    label: "Load from file…",
-                    selected: false,
-                    onSelect: () => {
-                      setMenu(null);
-                      loadSubtitleFile().catch((e) => setToast(String(e)));
+              ...(isAndroid
+                ? []
+                : [
+                    {
+                      heading: "From this computer",
+                      options: [
+                        {
+                          key: "file",
+                          label: "Load from file…",
+                          selected: false,
+                          onSelect: () => {
+                            setMenu(null);
+                            loadSubtitleFile().catch((e) => setToast(String(e)));
+                          },
+                        },
+                      ],
                     },
-                  },
-                ],
-              },
+                  ]),
 
             ]}
           />
@@ -792,21 +834,26 @@ export default function Controls() {
               },
             ]}
           />
-          <button
-            className="icon"
-            onClick={() => setHelp((shown) => !shown)}
-            aria-label="Keyboard shortcuts"
-            title="Keyboard shortcuts (?)"
-          >
-            ?
-          </button>
-          <button
-            className="icon"
-            onClick={() => send({ action: "toggleFullscreen" })}
-            aria-label="Fullscreen"
-          >
-            ⛶
-          </button>
+          {/* On Android there is no keyboard, and the player always fills the screen. */}
+          {!isAndroid && (
+            <>
+              <button
+                className="icon"
+                onClick={() => setHelp((shown) => !shown)}
+                aria-label="Keyboard shortcuts"
+                title="Keyboard shortcuts (?)"
+              >
+                ?
+              </button>
+              <button
+                className="icon"
+                onClick={() => send({ action: "toggleFullscreen" })}
+                aria-label="Fullscreen"
+              >
+                ⛶
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

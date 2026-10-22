@@ -1542,6 +1542,22 @@ body.player-open .app {
   user-select: none;
 }
 
+/* On Android the video is a native view under the page: while it plays the page steps aside
+   and only the player controls (a shadow root over everything) are drawn. */
+.android-player {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+html[data-platform="android"] body.player-open {
+  background: transparent;
+}
+
+html[data-platform="android"] body.player-open .app {
+  visibility: hidden;
+}
+
 .page-tools {
   display: flex;
   justify-content: flex-end;

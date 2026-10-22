@@ -339,6 +339,21 @@ export default function SettingsScreen({ email, settings, onChange, onSignOut, s
             </span>
           </span>
         </label>
+        {isAndroid && (
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={settings.torrentWifiOnly}
+              onChange={(e) => update({ torrentWifiOnly: e.target.checked })}
+            />
+            <span>
+              <strong>Only on Wi-Fi</strong>
+              <span className="muted small">
+                Torrents do not start on mobile data. Debrid and direct links still play.
+              </span>
+            </span>
+          </label>
+        )}
         <label className="setting cache-setting">
           <span className="setting-label">Torrent cache size (GB)</span>
           <input

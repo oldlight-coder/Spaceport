@@ -8,6 +8,8 @@ import WindowControls from "../components/WindowControls";
 import { OpenAddonsContext, OpenTitleContext, SearchContext, TitleRef } from "../navigation";
 import { useOnline } from "../online";
 import { useForwardPlayerKeys, usePlayerBackdrop } from "../playerKeys";
+import AndroidPlayer from "../player/AndroidPlayer";
+import { isAndroid } from "../platform";
 import { applyTheme, cacheAppearance } from "../theme";
 import { NewEpisodesContext, useNewEpisodesLoader } from "../newEpisodes";
 import BoardScreen from "./BoardScreen";
@@ -117,6 +119,7 @@ export default function HomeScreen({ user, onSession }: Props) {
       <SearchContext.Provider value={search}>
       <CatalogLayoutContext.Provider value={catalogLayout}>
         <NewEpisodesContext.Provider value={newEpisodes}>
+          {isAndroid && <AndroidPlayer />}
           <div className="app">
             {/* The window has no Windows title bar: the top bar moves it (drag, or double-click
                 to maximize) and holds the window buttons. */}

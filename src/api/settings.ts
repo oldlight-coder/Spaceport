@@ -31,6 +31,8 @@ export interface Settings {
   avatar: string | null;
   torrentDht: boolean;
   torrentCacheGb: number;
+  /** Android: play torrents only on Wi-Fi. */
+  torrentWifiOnly: boolean;
   subtitleStyle: SubtitleStyle;
   /** Skip anime intros, outros and recaps without asking. */
   animeAutoSkip: boolean;
