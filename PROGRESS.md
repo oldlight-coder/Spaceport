@@ -360,3 +360,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
   another video from the page, or fullscreen, brings it back to full size.
 - 2026-10-22: Windows title bar replaced by Spaceport's own (owner's request): the top bar moves the window (drag, double-click to maximize) and has minimize, maximize/restore and close; sign-in and start-up screens get a slim bar with the same buttons. Only the main window may use these window permissions.
 - 2026-10-22: Window buttons highlight only their icon on hover (accent colour; red for close), per the owner.
+- 2026-10-22: Window button hover is now white (the text colour) on dimmed resting icons; close stays red.

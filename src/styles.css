@@ -1716,16 +1716,18 @@ button.person-link:hover:not(:disabled) {
   padding: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--muted);
+  /* Dimmed at rest so the bright hover stands out. */
+  color: color-mix(in srgb, var(--md-on-surface) 50%, transparent);
   transition: color 0.15s var(--ease);
 }
 
-/* Only the icon lights up: the accent colour, and red for close. */
+/* Only the icon lights up: full white (the text colour, so it also shows in light mode), and
+   red for close. */
 .window-controls button:hover:not(:disabled),
 .window-controls button:active:not(:disabled) {
   box-shadow: none;
   background: transparent;
-  color: var(--accent);
+  color: var(--md-on-surface);
 }
 
 .window-controls button.close:hover:not(:disabled),
@@ -1735,7 +1737,7 @@ button.person-link:hover:not(:disabled) {
 
 .window-controls button:focus-visible {
   outline: none;
-  color: var(--accent);
+  color: var(--md-on-surface);
 }
 
 .window-controls svg {
