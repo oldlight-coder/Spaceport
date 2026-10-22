@@ -13,6 +13,7 @@ import { episodeHeading, nextEpisode } from "../episodes";
 import { titleProgress, VideoProgress, watchedShare } from "../api/progress";
 import { getWatched, setWatched, WatchedMarks } from "../api/watched";
 import { TitleInfo } from "../api/player";
+import { libraryStatus, setInLibrary } from "../api/library";
 import { formatTime } from "../format";
 import { setWatching, useWatching } from "../watching";
 import BookmarkIcon from "../components/BookmarkIcon";
@@ -78,6 +79,33 @@ function useTitleProgress(id: string) {
   return [progress, load] as const;
 }
 
+/** Whether the title is in the Stremio library (null until known), and a toggle for it. */
+function useInLibrary(item: TitleInfo) {
+  const [inLibrary, setIn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let current = true;
+    libraryStatus(item.id)
+      .then((value) => current && setIn(value))
+      .catch(() => current && setIn(false));
+    return () => {
+      current = false;
+    };
+    // The item object is rebuilt on every render; its id is what identifies it.
+  }, [item.id]);
+
+  async function toggle() {
+    if (inLibrary === null) return;
+    setBusy(true);
+    try {
+      setIn(await setInLibrary(item, !inLibrary));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return { inLibrary, busy, toggle };
+}
+
 /** Watched marks from the Stremio library; refreshed whenever the player closes. */
 function useWatched(item: TitleInfo) {
   const [marks, setMarks] = useState<WatchedMarks>({ title: false, videos: [] });
@@ -127,6 +155,7 @@ function Details({ meta }: { meta: MetaDetails }) {
     genres: meta.genres,
   };
   const watched = useWatched(item);
+  const library = useInLibrary(item);
   const watchingList = useWatching();
   const newHere = useNewEpisodes()[meta.id] ?? [];
   const watchedSet = new Set(watched.marks.videos);
@@ -285,6 +314,16 @@ function Details({ meta }: { meta: MetaDetails }) {
             )}
             {meta.description && <p className="description">{meta.description}</p>}
             <div className="row-actions">
+              <button
+                className={library.inLibrary ? "secondary library-toggle on" : "secondary library-toggle"}
+                onClick={() =>
+                  library.toggle().catch((e) => setNotice({ text: String(e), error: true }))
+                }
+                disabled={library.inLibrary === null || library.busy}
+                title={library.inLibrary ? "Remove from your Stremio library" : "Add to your Stremio library"}
+              >
+                {library.inLibrary ? "✓ In library" : "+ Add to library"}
+              </button>
               <button
                 className={isWatching ? "secondary watching-toggle on" : "secondary watching-toggle"}
                 onClick={() =>

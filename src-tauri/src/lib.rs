@@ -760,6 +760,49 @@ async fn save_progress(app: tauri::AppHandle, report: player::WatchReport) {
     let _ = state.api.put_library_items(&key, &[item]).await;
 }
 
+/// Whether the title is in the user's Stremio library.
+#[tauri::command]
+async fn library_status(state: tauri::State<'_, AppState>, id: String) -> Result<bool, String> {
+    let key = state.auth_key()?;
+    let stored = state
+        .api
+        .library_item(&key, &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(stored.as_ref().is_some_and(progress::in_library))
+}
+
+/// Adds the title to the Stremio library or removes it. Returns whether it is in it now.
+#[tauri::command]
+async fn library_set(
+    state: tauri::State<'_, AppState>,
+    item: progress::TitleInfo,
+    add: bool,
+) -> Result<bool, String> {
+    let key = state.auth_key()?;
+    // The same entry holds watch progress, so no progress save may run in between.
+    let _one_at_a_time = state.progress_lock.lock().await;
+    let now = progress::iso_time(std::time::SystemTime::now());
+    let stored = state
+        .api
+        .library_item(&key, &item.id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut stored = match stored {
+        Some(stored) => stored,
+        // Nothing to remove for a title Stremio has never seen.
+        None if !add => return Ok(false),
+        None => progress::new_library_item(&item, &now),
+    };
+    progress::set_in_library(&mut stored, add, &now);
+    state
+        .api
+        .put_library_items(&key, std::slice::from_ref(&stored))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(progress::in_library(&stored))
+}
+
 /// What is marked watched for a title, read from its Stremio library item.
 #[tauri::command]
 async fn watched_get(
@@ -1070,6 +1113,8 @@ pub fn run() {
             player_load_subtitle,
             continue_watching,
             continue_dismiss,
+            library_status,
+            library_set,
             new_episodes,
             search_assist,
             title_progress,

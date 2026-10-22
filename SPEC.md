@@ -7,6 +7,7 @@ or hosted services of its own.
 ## 1. Stremio account and library
 - Sign in with a Stremio account through Stremio's public API (`api.strem.io`).
 - Sync the library, watch progress and installed addons both ways.
+- Add titles to the library and remove them, from a title's page and from the Library.
 - Continue Watching row and per-episode resume position.
 - Mark titles and episodes watched or unwatched.
 
