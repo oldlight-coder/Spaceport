@@ -92,12 +92,12 @@ pass on Windows. The owner tests each milestone before the next one starts.
   here leaves it, with its watch progress kept.
 
 ## M13. Browsing and player conveniences
-- [ ] Calendar of upcoming episodes
-- [ ] Home row editor (order and hide rows; catalogs on Movies/Series/Anime)
-- [ ] Watch history
-- [ ] "More like this" and searchable cast and directors on the title page
-- [ ] Auto-play next episode switch in Settings
-- [ ] Shortcut help on "?" in the player
+- [x] Calendar of upcoming episodes
+- [x] Home row editor (order and hide rows; catalogs on Movies/Series/Anime)
+- [x] Watch history
+- [x] "More like this" and searchable cast and directors on the title page
+- [x] Auto-play next episode switch in Settings
+- [x] Shortcut help on "?" in the player
 - **Acceptance:** each works in the Windows app.
 
 ## M14. Mini player
@@ -352,3 +352,4 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - 2026-10-22: Addon requests are retried once, 1.5 s later, after a 502-504 answer (the owner hit
   504s from Cinemeta and TMDB searching a cast name); failed search rows show one quiet line
   with "Try again" instead of a heading and a red error.
+- 2026-10-22: M13 accepted by the owner on Windows; ticked.
