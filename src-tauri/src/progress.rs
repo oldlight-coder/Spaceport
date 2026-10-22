@@ -163,6 +163,26 @@ fn number(state: &Map<String, Value>, key: &str) -> f64 {
     state.get(key).and_then(Value::as_f64).unwrap_or(0.0)
 }
 
+/// Whether a stored library item is in the library (not removed and not just a temporary entry
+/// for a title that was only watched).
+pub fn in_library(item: &Value) -> bool {
+    let flag = |key: &str| item.get(key).and_then(Value::as_bool).unwrap_or(false);
+    !flag("removed") && !flag("temp")
+}
+
+/// Adds a title to the library or removes it, as the official apps do: the entry stays in the
+/// datastore either way, with its progress and watched marks, and only its flags change.
+pub fn set_in_library(item: &mut Value, add: bool, now: &str) {
+    let Some(object) = item.as_object_mut() else {
+        return;
+    };
+    object.insert("removed".into(), json!(!add));
+    if add {
+        object.insert("temp".into(), json!(false));
+    }
+    object.insert("_mtime".into(), json!(now));
+}
+
 /// Takes a title off Continue Watching, as the official apps' Dismiss does: the position goes
 /// back to the start. Watched marks and watch-time totals stay.
 pub fn rewind(item: &mut Value, now: &str) {
@@ -445,6 +465,26 @@ mod tests {
         assert_eq!(item["removed"], json!(true));
         assert_eq!(item["temp"], json!(true));
         assert_eq!(item["state"]["timeOffset"], json!(0));
+    }
+
+    #[test]
+    fn adding_and_removing_keeps_progress() {
+        let mut item = new_library_item(&title(), "t0");
+        apply_progress(&mut item, "tt0903747:1:2", 754.4, 2890.0, 60.0, "t1");
+        item["_id"] = json!("tt0903747");
+        // A title only watched is not in the library, but is in Continue Watching.
+        assert!(!in_library(&item));
+        set_in_library(&mut item, true, "t2");
+        assert!(in_library(&item));
+        assert_eq!(item["_mtime"], json!("t2"));
+        assert_eq!(continue_watching(std::slice::from_ref(&item)).len(), 1);
+        set_in_library(&mut item, false, "t3");
+        assert!(!in_library(&item));
+        assert_eq!(item["removed"], json!(true));
+        assert_eq!(item["state"]["timeOffset"], json!(754_400));
+        set_in_library(&mut item, true, "t4");
+        assert!(in_library(&item));
+        assert_eq!(item["state"]["timeOffset"], json!(754_400));
     }
 
     #[test]

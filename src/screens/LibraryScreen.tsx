@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { LibraryItem, listLibrary } from "../api/library";
+import { useEffect, useState } from "react";
+import { LIBRARY_CHANGED, LibraryItem, listLibrary, setInLibrary } from "../api/library";
 import { LoadableList, useLoad } from "../components/Loadable";
 import PosterCard from "../components/PosterCard";
 import { setWatching, useWatching } from "../watching";
@@ -84,7 +84,29 @@ function remember(key: string, value: string) {
 
 /** The library in tabs: titles marked as watching, then one tab per type. */
 export default function LibraryScreen() {
-  const [library, reload] = useLoad(listLibrary);
+  const [library, reload, setLibrary] = useLoad(listLibrary);
+  const [error, setError] = useState<string | null>(null);
+  // Titles added or removed on their page show up here without a restart.
+  useEffect(() => {
+    window.addEventListener(LIBRARY_CHANGED, reload);
+    return () => window.removeEventListener(LIBRARY_CHANGED, reload);
+  }, [reload]);
+
+  // The card goes at once; the Stremio library follows.
+  async function remove(item: LibraryItem) {
+    if (library.status !== "ready") return;
+    setError(null);
+    setLibrary({ status: "ready", data: library.data.filter((i) => i.id !== item.id) });
+    try {
+      await setInLibrary(
+        { id: item.id, type: item.type, name: item.name, poster: item.poster, videoIds: [], genres: [] },
+        false,
+      );
+    } catch (e) {
+      setError(`Could not remove ${item.name || item.id}: ${e}`);
+      reload();
+    }
+  }
   const watching = useWatching();
   const [tab, setTab] = useState(() => read(TAB_KEY));
   const [sort, setSort] = useState<Sort>(() => {
@@ -177,7 +199,9 @@ export default function LibraryScreen() {
           </ul>
         )
       ) : (
-        <LoadableList
+        <>
+          {error && <p className="error">{error}</p>}
+          <LoadableList
           state={library}
           onRetry={reload}
           empty="Your library is empty."
@@ -191,11 +215,14 @@ export default function LibraryScreen() {
                   name={item.name || item.id}
                   poster={item.poster}
                   title={{ type: item.type, id: item.id }}
+                  onRemove={() => remove(item)}
+                  removeLabel="Remove from library"
                 />
               ))}
             </ul>
           )}
-        </LoadableList>
+          </LoadableList>
+        </>
       )}
     </section>
   );

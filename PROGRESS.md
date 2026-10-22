@@ -86,6 +86,11 @@ pass on Windows. The owner tests each milestone before the next one starts.
 - [x] Forgiving search: typos and partial words still find titles ("Best matches" row)
 - **Acceptance:** misspelled titles such as "breakng bad" or "the mandolorian" are found.
 
+## M12. Library entries
+- [x] Add to / remove from the Stremio library on a title's page; remove from Library posters
+- **Acceptance:** a title added here shows in the official Stremio app's library, and one removed
+  here leaves it, with its watch progress kept.
+
 ## Decisions
 (Record any spec changes agreed with the owner here.)
 - 2026-10-20: Settings page brought forward from M8 at the owner's request. A cog button in the top
@@ -122,6 +127,9 @@ pass on Windows. The owner tests each milestone before the next one starts.
   window, which the CSP prevents), the possible fullscreen freeze was unconfirmed (lock now
   released early anyway), simultaneous addon edits (the UI blocks them; search now uses the
   cached list) and stale settings copies (the settings page now reloads when opened).
+- 2026-10-22: Adding and removing library titles was missing from SPEC section 1 (owner noticed);
+  added as M12. Like the official apps, removing only sets the entry's "removed" flag, so watch
+  progress and watched marks survive and come back if the title is added again.
 
 ## Log
 (One line per finished item: date, item, commit.)
@@ -295,3 +303,7 @@ pass on Windows. The owner tests each milestone before the next one starts.
   build (libmpv DLL hash pinned and checked before bundling). 197 tests pass.
 - 2026-10-21: While a video is open the page behind it is blurred and dimmed (owner's request), so nothing shows through before the first frame or during a stream switch.
 - 2026-10-21: Player skip buttons show only arrows (owner's request); the amount and keys are in their tooltips.
+- 2026-10-22: M12 implemented (not yet ticked: needs a Windows check): library_status and
+  library_set commands, "+ Add to library" / "✓ In library" on the title page, a remove button on
+  Library posters, and the Library refreshing after changes. Unit test for the flags.
+- 2026-10-22: M12 accepted by the owner on Windows; ticked.
