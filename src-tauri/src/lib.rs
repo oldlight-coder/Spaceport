@@ -2,6 +2,7 @@ mod aniskip;
 mod auth;
 mod fuzzy;
 mod language;
+mod mobile;
 mod new_episodes;
 mod player;
 mod progress;
@@ -20,7 +21,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use auth::Session;
 use ranking::RankedResults;
-use secrets::{KeyringStore, SecretStore};
+use secrets::SecretStore;
 use settings::{Settings, SettingsStore};
 use stremio::addons::{self, Addon, AddonError};
 use stremio::api::{StremioApi, ADDON_TIMEOUT, DEFAULT_BASE_URL};
@@ -1094,9 +1095,23 @@ async fn addons_configure(
         .map_err(|e| e.to_string())
 }
 
+/// Where secrets go: the Android Keystore through Spaceport's plugin on Android, the
+/// Credential Manager elsewhere.
+#[cfg(target_os = "android")]
+fn secret_store<R: tauri::Runtime>(app: &tauri::App<R>) -> Box<dyn SecretStore> {
+    let native = app.state::<mobile::Native<R>>();
+    Box::new(secrets::KeystoreStore(native.0.clone()))
+}
+
+#[cfg(not(target_os = "android"))]
+fn secret_store<R: tauri::Runtime>(_app: &tauri::App<R>) -> Box<dyn SecretStore> {
+    Box::new(secrets::KeyringStore)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(mobile::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -1111,7 +1126,7 @@ pub fn run() {
             );
             app.manage(AppState {
                 api: StremioApi::new(DEFAULT_BASE_URL),
-                secrets: Box::new(KeyringStore),
+                secrets: secret_store(app),
                 sources: Mutex::new(Vec::new()),
                 settings: Mutex::new(settings),
                 settings_store,

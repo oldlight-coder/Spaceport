@@ -368,3 +368,6 @@ pass on Windows. The owner tests each milestone before the next one starts.
   (Windows keeps its system TLS), the libmpv pin check only for Windows builds, and a workflow
   that builds a debug arm64 APK and validates the Gradle wrapper. The Gradle distribution's
   SHA-256 gets pinned from the checksum Gradle publishes (printed by the workflow).
+- 2026-10-22: M15: secrets on Android through Spaceport's own plugin (SpaceportPlugin.kt): an
+  AES-256 key created in the Android Keystore encrypts each secret (AES-GCM); only ciphertext
+  is kept in the app's private storage. Windows keeps the Credential Manager.
