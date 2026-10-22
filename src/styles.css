@@ -1712,29 +1712,38 @@ button.person-link:hover:not(:disabled) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
+  width: 42px;
   padding: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--md-on-surface);
+  color: var(--muted);
+  transition: color 0.15s var(--ease);
 }
 
-.window-controls button:hover:not(:disabled) {
+/* Only the icon lights up: the accent colour, and red for close. */
+.window-controls button:hover:not(:disabled),
+.window-controls button:active:not(:disabled) {
   box-shadow: none;
-  background: var(--hover);
+  background: transparent;
+  color: var(--accent);
 }
 
-.window-controls button.close:hover:not(:disabled) {
-  background: #c42b1c;
-  color: #fff;
+.window-controls button.close:hover:not(:disabled),
+.window-controls button.close:active:not(:disabled) {
+  color: #e81123;
+}
+
+.window-controls button:focus-visible {
+  outline: none;
+  color: var(--accent);
 }
 
 .window-controls svg {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1;
+  stroke-width: 1.2;
 }
 
 .title-bar {
